@@ -1,0 +1,158 @@
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
+import type { AppSnapshot } from "../../../shared/alert-model";
+import { sanitizeConfigInput, type AppConfigInput } from "../../../shared/config-model";
+import { APP_SNAPSHOT_EVENT, type SnapshotEventPayload } from "../../../shared/events";
+
+function isTauriRuntime() {
+  return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+}
+
+function createFallbackSnapshot(): AppSnapshot {
+  const config = sanitizeConfigInput({
+    apiBaseUrl: "https://api.example.com",
+    apiKey: "demo-key",
+    pollingIntervalSeconds: 60,
+    symbol: "BTCUSDT",
+    signalTypesText: "vegas,divMacd,tdMd",
+  });
+  const now = Date.now();
+
+  return {
+    bootstrapRequired: false,
+    config,
+    rawResponse: {
+      total: 3,
+      page: 1,
+      pageSize: 25,
+      data: [
+        {
+          symbol: "BTCUSDT",
+          period: "240",
+          t: now,
+          signals: {
+            vegas: { sd: 1, t: now - 2 * 240 * 60 * 1000, read: false },
+            divMacd: { sd: -1, t: now - 6 * 240 * 60 * 1000, read: true },
+          },
+        },
+        {
+          symbol: "BTCUSDT",
+          period: "60",
+          t: now,
+          signals: {
+            vegas: { sd: 1, t: now - 2 * 60 * 60 * 1000, read: false },
+            divMacd: { sd: -1, t: now - 18 * 60 * 60 * 1000, read: true },
+            tdMd: { sd: 1, t: now - 4 * 60 * 60 * 1000, read: false },
+          },
+        },
+        {
+          symbol: "BTCUSDT",
+          period: "15",
+          t: now,
+          signals: {
+            vegas: { sd: -1, t: now - 11 * 15 * 60 * 1000, read: true },
+            divMacd: { sd: 1, t: now - 3 * 15 * 60 * 1000, read: false },
+          },
+        },
+      ],
+    },
+    health: {
+      status: "success",
+      pollingIntervalSeconds: 60,
+      isStale: false,
+    },
+    diagnostics: {
+      source: "system",
+      code: "BROWSER_PREVIEW",
+      message: "Browser preview is showing a mocked snapshot because Tauri runtime is not attached.",
+      lastAttemptAt: now - 12_000,
+      lastSuccessfulSyncAt: now - 12_000,
+      nextRetryAt: null,
+    },
+  };
+}
+
+export function useAppEvents() {
+  const [snapshot, setSnapshot] = useState<AppSnapshot | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!isTauriRuntime()) {
+      setSnapshot(createFallbackSnapshot());
+      return undefined;
+    }
+
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+
+    async function bootstrap() {
+      const initialSnapshot = await invoke<AppSnapshot>("get_bootstrap_state");
+
+      if (!disposed) {
+        setSnapshot(initialSnapshot);
+      }
+
+      unlisten = await listen<SnapshotEventPayload>(APP_SNAPSHOT_EVENT, (event) => {
+        setSnapshot(event.payload.snapshot);
+      });
+    }
+
+    bootstrap().catch((error: unknown) => {
+      setSubmitError(
+        error instanceof Error ? error.message : "Failed to load bootstrap state.",
+      );
+    });
+
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, []);
+
+  const saveConfig = useCallback(async (input: AppConfigInput) => {
+    setSubmitError(null);
+    setIsSaving(true);
+
+    try {
+      const nextConfig = sanitizeConfigInput(input);
+
+      if (!isTauriRuntime()) {
+        setSnapshot({
+          ...createFallbackSnapshot(),
+          config: nextConfig,
+        });
+        return;
+      }
+
+      const nextSnapshot = await invoke<AppSnapshot>("save_config", { input: nextConfig });
+      setSnapshot(nextSnapshot);
+    } catch (error: unknown) {
+      setSubmitError(error instanceof Error ? error.message : "Failed to save config.");
+      throw error;
+    } finally {
+      setIsSaving(false);
+    }
+  }, []);
+
+  const pollNow = useCallback(async () => {
+    if (!isTauriRuntime()) {
+      setSnapshot(createFallbackSnapshot());
+      return;
+    }
+
+    await invoke<AppSnapshot>("poll_now");
+  }, []);
+
+  return useMemo(
+    () => ({
+      snapshot,
+      isSaving,
+      submitError,
+      saveConfig,
+      pollNow,
+    }),
+    [snapshot, isSaving, submitError, saveConfig, pollNow],
+  );
+}
