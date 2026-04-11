@@ -14,7 +14,7 @@ export function buildGroupViewModel(
   activeSignalType?: string,
   nowMs = Date.now(),
 ): GroupViewModel | null {
-  if (!snapshot.config) {
+  if (!snapshot.config || snapshot.config.groups.length === 0) {
     return null;
   }
 

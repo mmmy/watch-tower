@@ -51,6 +51,16 @@ mod tests {
                 periods: vec!["60".into()],
                 selected_timeline_period: "60".into(),
             }],
+            dashboard: crate::app_state::DashboardPreferences {
+                layout_preset: "table".into(),
+                density: "comfortable".into(),
+            },
+            window_policy: crate::app_state::WindowPolicyConfig {
+                dock_side: "right".into(),
+                widget_width: 280,
+                widget_height: 720,
+                top_offset: 96,
+            },
         }
     }
 

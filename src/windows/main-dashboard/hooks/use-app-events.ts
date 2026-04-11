@@ -2,21 +2,48 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import type { AppSnapshot } from "../../../shared/alert-model";
-import { sanitizeConfigInput, type AppConfigInput } from "../../../shared/config-model";
+import {
+  sanitizeConfigInput,
+  type AppConfig,
+  type AppConfigInput,
+} from "../../../shared/config-model";
 import { APP_SNAPSHOT_EVENT, type SnapshotEventPayload } from "../../../shared/events";
 
 function isTauriRuntime() {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 }
 
-function createFallbackSnapshot(): AppSnapshot {
-  const config = sanitizeConfigInput({
-    apiBaseUrl: "https://api.example.com",
-    apiKey: "demo-key",
-    pollingIntervalSeconds: 60,
-    symbol: "BTCUSDT",
-    signalTypesText: "vegas,divMacd,tdMd",
-  });
+function createFallbackSnapshot(configOverride?: AppConfig): AppSnapshot {
+  const config =
+    configOverride ??
+    sanitizeConfigInput({
+      apiBaseUrl: "https://api.example.com",
+      apiKey: "demo-key",
+      pollingIntervalSeconds: 60,
+      selectedGroupId: "eth-swing",
+      layoutPreset: "table",
+      density: "comfortable",
+      windowPolicy: {
+        dockSide: "right",
+        widgetWidth: 280,
+        widgetHeight: 720,
+        topOffset: 96,
+      },
+      groups: [
+        {
+          id: "btc-core",
+          symbol: "BTCUSDT",
+          signalTypesText: "vegas,divMacd,tdMd",
+          selectedTimelinePeriod: "60",
+        },
+        {
+          id: "eth-swing",
+          symbol: "ETHUSDT",
+          signalTypesText: "vegas,divMacd",
+          selectedTimelinePeriod: "240",
+        },
+      ],
+    });
   const now = Date.now();
 
   return {
@@ -53,6 +80,24 @@ function createFallbackSnapshot(): AppSnapshot {
           signals: {
             vegas: { sd: -1, t: now - 11 * 15 * 60 * 1000, read: true },
             divMacd: { sd: 1, t: now - 3 * 15 * 60 * 1000, read: false },
+          },
+        },
+        {
+          symbol: "ETHUSDT",
+          period: "240",
+          t: now,
+          signals: {
+            vegas: { sd: -1, t: now - 3 * 240 * 60 * 1000, read: true },
+            divMacd: { sd: 1, t: now - 240 * 60 * 1000, read: false },
+          },
+        },
+        {
+          symbol: "ETHUSDT",
+          period: "60",
+          t: now,
+          signals: {
+            vegas: { sd: -1, t: now - 5 * 60 * 60 * 1000, read: true },
+            divMacd: { sd: 1, t: now - 2 * 60 * 60 * 1000, read: false },
           },
         },
       ],
@@ -120,7 +165,7 @@ export function useAppEvents() {
 
       if (!isTauriRuntime()) {
         setSnapshot({
-          ...createFallbackSnapshot(),
+          ...createFallbackSnapshot(nextConfig),
           config: nextConfig,
         });
         return;
@@ -145,6 +190,25 @@ export function useAppEvents() {
     await invoke<AppSnapshot>("poll_now");
   }, []);
 
+  const selectGroup = useCallback(async (groupId: string) => {
+    if (!isTauriRuntime()) {
+      setSnapshot((currentSnapshot) => {
+        if (!currentSnapshot?.config) {
+          return currentSnapshot;
+        }
+
+        return createFallbackSnapshot({
+          ...currentSnapshot.config,
+          selectedGroupId: groupId,
+        });
+      });
+      return;
+    }
+
+    const nextSnapshot = await invoke<AppSnapshot>("select_group", { groupId });
+    setSnapshot(nextSnapshot);
+  }, []);
+
   return useMemo(
     () => ({
       snapshot,
@@ -152,7 +216,8 @@ export function useAppEvents() {
       submitError,
       saveConfig,
       pollNow,
+      selectGroup,
     }),
-    [snapshot, isSaving, submitError, saveConfig, pollNow],
+    [snapshot, isSaving, submitError, saveConfig, pollNow, selectGroup],
   );
 }

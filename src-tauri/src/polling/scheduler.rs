@@ -52,6 +52,15 @@ pub async fn poll_once(app: &AppHandle, state: SharedAppState) -> Result<AppSnap
     };
 
     let attempt_started_at = now();
+
+    if config.groups.is_empty() {
+        let current_snapshot = state.current_snapshot().await;
+        let next_snapshot = build_empty_groups_snapshot(&current_snapshot, &config, attempt_started_at);
+        state.replace_snapshot(next_snapshot.clone()).await;
+        emit_snapshot(app, &next_snapshot)?;
+        return Ok(next_snapshot);
+    }
+
     let polling_snapshot = state
         .update_with(|snapshot| {
             snapshot.bootstrap_required = false;
@@ -205,12 +214,90 @@ fn now() -> u64 {
         .as_millis() as u64
 }
 
+fn build_empty_groups_snapshot(
+    current_snapshot: &AppSnapshot,
+    config: &crate::app_state::AppConfig,
+    attempt_started_at: u64,
+) -> AppSnapshot {
+    AppSnapshot {
+        bootstrap_required: false,
+        config: Some(config.clone()),
+        raw_response: current_snapshot.raw_response.clone(),
+        health: PollingHealth {
+            status: "configError".into(),
+            polling_interval_seconds: Some(clamp_polling_interval(config.polling_interval_seconds)),
+            is_stale: current_snapshot.raw_response.is_some(),
+        },
+        diagnostics: DiagnosticsInfo {
+            source: "config".into(),
+            code: Some("NO_GROUPS".into()),
+            message: "Add at least one watch group to resume polling.".into(),
+            last_attempt_at: Some(attempt_started_at),
+            last_successful_sync_at: current_snapshot.diagnostics.last_successful_sync_at,
+            next_retry_at: None,
+        },
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::sleep_duration_ms;
+    use super::{build_empty_groups_snapshot, sleep_duration_ms};
+    use crate::app_state::{
+        AppConfig, AppSnapshot, DashboardPreferences, DiagnosticsInfo, PollingHealth,
+        WindowPolicyConfig,
+    };
 
     #[test]
     fn prefers_backoff_retry_over_interval() {
         assert_eq!(sleep_duration_ms(60, Some(9_000), 4_000), 5_000);
+    }
+
+    #[test]
+    fn empty_group_configs_surface_a_config_error_without_polling() {
+        let current_snapshot = AppSnapshot {
+            bootstrap_required: false,
+            config: None,
+            raw_response: None,
+            health: PollingHealth {
+                status: "idle".into(),
+                polling_interval_seconds: Some(60),
+                is_stale: false,
+            },
+            diagnostics: DiagnosticsInfo {
+                source: "system".into(),
+                code: Some("CONFIG_READY".into()),
+                message: "ready".into(),
+                last_attempt_at: None,
+                last_successful_sync_at: Some(1_000),
+                next_retry_at: None,
+            },
+        };
+        let config = AppConfig {
+            api_base_url: "https://example.com".into(),
+            api_key: "secret".into(),
+            polling_interval_seconds: 60,
+            selected_group_id: "".into(),
+            groups: vec![],
+            dashboard: DashboardPreferences {
+                layout_preset: "table".into(),
+                density: "comfortable".into(),
+            },
+            window_policy: WindowPolicyConfig {
+                dock_side: "right".into(),
+                widget_width: 280,
+                widget_height: 720,
+                top_offset: 96,
+            },
+        };
+
+        let next_snapshot = build_empty_groups_snapshot(&current_snapshot, &config, 2_000);
+
+        assert_eq!(next_snapshot.health.status, "configError");
+        assert_eq!(next_snapshot.diagnostics.code.as_deref(), Some("NO_GROUPS"));
+        assert_eq!(
+            next_snapshot.diagnostics.message,
+            "Add at least one watch group to resume polling."
+        );
+        assert_eq!(next_snapshot.diagnostics.last_successful_sync_at, Some(1_000));
     }
 }

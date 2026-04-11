@@ -18,12 +18,32 @@ pub struct WatchGroupConfig {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+pub struct DashboardPreferences {
+    pub layout_preset: String,
+    pub density: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct WindowPolicyConfig {
+    pub dock_side: String,
+    pub widget_width: u64,
+    pub widget_height: u64,
+    pub top_offset: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
 pub struct AppConfig {
     pub api_base_url: String,
     pub api_key: String,
     pub polling_interval_seconds: u64,
     pub selected_group_id: String,
     pub groups: Vec<WatchGroupConfig>,
+    #[serde(default = "default_dashboard_preferences")]
+    pub dashboard: DashboardPreferences,
+    #[serde(default = "default_window_policy")]
+    pub window_policy: WindowPolicyConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -157,5 +177,21 @@ impl AppSnapshot {
                 },
             },
         }
+    }
+}
+
+fn default_dashboard_preferences() -> DashboardPreferences {
+    DashboardPreferences {
+        layout_preset: "table".into(),
+        density: "comfortable".into(),
+    }
+}
+
+fn default_window_policy() -> WindowPolicyConfig {
+    WindowPolicyConfig {
+        dock_side: "right".into(),
+        widget_width: 280,
+        widget_height: 720,
+        top_offset: 96,
     }
 }

@@ -28,6 +28,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::get_bootstrap_state,
             commands::save_config,
+            commands::select_group,
             commands::poll_now
         ])
         .run(tauri::generate_context!())

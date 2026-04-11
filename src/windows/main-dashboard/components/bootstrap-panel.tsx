@@ -5,6 +5,10 @@ interface BootstrapPanelProps {
   initialValues?: Partial<AppConfigInput>;
   isSaving: boolean;
   submitError: string | null;
+  heading?: string;
+  subtle?: string;
+  submitLabel?: string;
+  showGroupFields?: boolean;
   onSubmit: (input: AppConfigInput) => Promise<void> | void;
 }
 
@@ -12,6 +16,10 @@ export function BootstrapPanel({
   initialValues,
   isSaving,
   submitError,
+  heading = "Bootstrap & window policy",
+  subtle = "Save the minimum viable runtime config and let the host start polling.",
+  submitLabel = "Save config & start polling",
+  showGroupFields = true,
   onSubmit,
 }: BootstrapPanelProps) {
   const [values, setValues] = useState<AppConfigInput>({
@@ -20,6 +28,11 @@ export function BootstrapPanel({
     pollingIntervalSeconds: initialValues?.pollingIntervalSeconds ?? 60,
     symbol: initialValues?.symbol ?? "BTCUSDT",
     signalTypesText: initialValues?.signalTypesText ?? "vegas,divMacd",
+    selectedGroupId: initialValues?.selectedGroupId,
+    groups: initialValues?.groups,
+    layoutPreset: initialValues?.layoutPreset,
+    density: initialValues?.density,
+    windowPolicy: initialValues?.windowPolicy,
   });
 
   useEffect(() => {
@@ -37,10 +50,8 @@ export function BootstrapPanel({
     <section className="panel section">
       <div className="section__header">
         <div>
-          <h2>Bootstrap & window policy</h2>
-          <div className="section__subtle">
-            Save the minimum viable runtime config and let the host start polling.
-          </div>
+          <h2>{heading}</h2>
+          <div className="section__subtle">{subtle}</div>
         </div>
       </div>
 
@@ -89,24 +100,26 @@ export function BootstrapPanel({
           </div>
         </div>
 
-        <div className="field-grid field-grid--two">
-          <div className="field">
-            <label htmlFor="symbol">Symbol</label>
-            <input
-              id="symbol"
-              value={values.symbol}
-              onChange={(event) => {
-                const value = event.currentTarget.value;
-                return (
-                setValues((current) => ({
-                  ...current,
-                  symbol: value,
-                }))
-                );
-              }}
-              placeholder="BTCUSDT"
-            />
-          </div>
+        <div className={`field-grid ${showGroupFields ? "field-grid--two" : ""}`}>
+          {showGroupFields ? (
+            <div className="field">
+              <label htmlFor="symbol">Symbol</label>
+              <input
+                id="symbol"
+                value={values.symbol}
+                onChange={(event) => {
+                  const value = event.currentTarget.value;
+                  return (
+                  setValues((current) => ({
+                    ...current,
+                    symbol: value,
+                  }))
+                  );
+                }}
+                placeholder="BTCUSDT"
+              />
+            </div>
+          ) : null}
 
           <div className="field">
             <label htmlFor="polling-seconds">Polling interval (seconds)</label>
@@ -128,33 +141,35 @@ export function BootstrapPanel({
           </div>
         </div>
 
-        <div className="field">
-          <label htmlFor="signal-types">Signal types</label>
-          <textarea
-            id="signal-types"
-            value={values.signalTypesText}
-            onChange={(event) => {
-              const value = event.currentTarget.value;
-              return (
-              setValues((current) => ({
-                ...current,
-                signalTypesText: value,
-              }))
-              );
-            }}
-            placeholder="vegas,divMacd,tdMd"
-          />
-          <div className="field__hint">
-            One group equals one symbol plus one or more signal types. Periods default to the
-            fixed 25-level stack required by the product doc.
+        {showGroupFields ? (
+          <div className="field">
+            <label htmlFor="signal-types">Signal types</label>
+            <textarea
+              id="signal-types"
+              value={values.signalTypesText}
+              onChange={(event) => {
+                const value = event.currentTarget.value;
+                return (
+                setValues((current) => ({
+                  ...current,
+                  signalTypesText: value,
+                }))
+                );
+              }}
+              placeholder="vegas,divMacd,tdMd"
+            />
+            <div className="field__hint">
+              One group equals one symbol plus one or more signal types. Periods default to the
+              fixed 25-level stack required by the product doc.
+            </div>
           </div>
-        </div>
+        ) : null}
 
         {submitError ? <div className="error-banner">{submitError}</div> : null}
 
         <div className="actions">
           <button className="button button--primary" type="submit" disabled={isSaving}>
-            {isSaving ? "Saving…" : "Save config & start polling"}
+            {isSaving ? "Saving…" : submitLabel}
           </button>
         </div>
       </form>
