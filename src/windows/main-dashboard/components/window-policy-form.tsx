@@ -41,6 +41,7 @@ export function WindowPolicyForm({
           <h3>Layout & window policy</h3>
           <div className="section__subtle">
             Store the minimum dashboard and widget preferences needed for the resident MVP.
+            Closing the dashboard keeps Watch Tower running in the tray so the resident widget can stay alive.
           </div>
         </div>
       </div>

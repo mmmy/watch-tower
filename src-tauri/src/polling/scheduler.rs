@@ -17,6 +17,21 @@ pub fn spawn(app: AppHandle, state: SharedAppState) {
                 continue;
             }
 
+            let current_snapshot = state.current_snapshot().await;
+            if should_skip_poll_for_runtime_state(&current_snapshot) {
+                let polling_interval_seconds = current_snapshot
+                    .config
+                    .as_ref()
+                    .map(|config| config.polling_interval_seconds)
+                    .unwrap_or(60);
+
+                tokio::select! {
+                    _ = tokio::time::sleep(Duration::from_millis((polling_interval_seconds * 1000).max(250))) => {}
+                    _ = state.wait_for_wake() => {}
+                }
+                continue;
+            }
+
             let _ = poll_once(&app, state.clone()).await;
 
             let snapshot = state.current_snapshot().await;
@@ -47,9 +62,17 @@ pub async fn poll_once(app: &AppHandle, state: SharedAppState) -> Result<AppSnap
         None => {
             let snapshot = state.current_snapshot().await;
             emit_snapshot(app, &snapshot)?;
+            crate::windows::sync_resident_surfaces(app, &snapshot)?;
             return Ok(snapshot);
         }
     };
+
+    let current_snapshot = state.current_snapshot().await;
+    if should_skip_poll_for_runtime_state(&current_snapshot) {
+        emit_snapshot(app, &current_snapshot)?;
+        crate::windows::sync_resident_surfaces(app, &current_snapshot)?;
+        return Ok(current_snapshot);
+    }
 
     let attempt_started_at = now();
 
@@ -58,6 +81,7 @@ pub async fn poll_once(app: &AppHandle, state: SharedAppState) -> Result<AppSnap
         let next_snapshot = build_empty_groups_snapshot(&current_snapshot, &config, attempt_started_at);
         state.replace_snapshot(next_snapshot.clone()).await;
         emit_snapshot(app, &next_snapshot)?;
+        crate::windows::sync_resident_surfaces(app, &next_snapshot)?;
         return Ok(next_snapshot);
     }
 
@@ -78,7 +102,9 @@ pub async fn poll_once(app: &AppHandle, state: SharedAppState) -> Result<AppSnap
         })
         .await;
     emit_snapshot(app, &polling_snapshot)?;
+    crate::windows::sync_resident_surfaces(app, &polling_snapshot)?;
 
+    let runtime = state.current_snapshot().await.runtime.clone();
     let next_snapshot = match alerts_client::fetch_signals(&state.http_client, &config).await {
         Ok(response) => AppSnapshot {
             bootstrap_required: false,
@@ -99,6 +125,7 @@ pub async fn poll_once(app: &AppHandle, state: SharedAppState) -> Result<AppSnap
                 last_successful_sync_at: Some(attempt_started_at),
                 next_retry_at: None,
             },
+            runtime,
         },
         Err(FetchError::Unauthorized) => {
             state
@@ -193,6 +220,7 @@ pub async fn poll_once(app: &AppHandle, state: SharedAppState) -> Result<AppSnap
 
     state.replace_snapshot(next_snapshot.clone()).await;
     emit_snapshot(app, &next_snapshot)?;
+    crate::windows::sync_resident_surfaces(app, &next_snapshot)?;
 
     Ok(next_snapshot)
 }
@@ -236,14 +264,19 @@ fn build_empty_groups_snapshot(
             last_successful_sync_at: current_snapshot.diagnostics.last_successful_sync_at,
             next_retry_at: None,
         },
+        runtime: current_snapshot.runtime.clone(),
     }
+}
+
+fn should_skip_poll_for_runtime_state(snapshot: &AppSnapshot) -> bool {
+    snapshot.runtime.polling_paused
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{build_empty_groups_snapshot, sleep_duration_ms};
+    use super::{build_empty_groups_snapshot, should_skip_poll_for_runtime_state, sleep_duration_ms};
     use crate::app_state::{
-        AppConfig, AppSnapshot, DashboardPreferences, DiagnosticsInfo, PollingHealth,
+        AppConfig, AppSnapshot, DashboardPreferences, DiagnosticsInfo, PollingHealth, RuntimeInfo,
         WindowPolicyConfig,
     };
 
@@ -270,6 +303,10 @@ mod tests {
                 last_attempt_at: None,
                 last_successful_sync_at: Some(1_000),
                 next_retry_at: None,
+            },
+            runtime: RuntimeInfo {
+                polling_paused: false,
+                last_active_status: None,
             },
         };
         let config = AppConfig {
@@ -299,5 +336,33 @@ mod tests {
             "Add at least one watch group to resume polling."
         );
         assert_eq!(next_snapshot.diagnostics.last_successful_sync_at, Some(1_000));
+    }
+
+    #[test]
+    fn paused_runtime_short_circuits_polling() {
+        let snapshot = AppSnapshot {
+            bootstrap_required: false,
+            config: None,
+            raw_response: None,
+            health: PollingHealth {
+                status: "success".into(),
+                polling_interval_seconds: Some(60),
+                is_stale: false,
+            },
+            diagnostics: DiagnosticsInfo {
+                source: "system".into(),
+                code: Some("SYNC_OK".into()),
+                message: "ready".into(),
+                last_attempt_at: None,
+                last_successful_sync_at: Some(1_000),
+                next_retry_at: Some(9_000),
+            },
+            runtime: RuntimeInfo {
+                polling_paused: true,
+                last_active_status: Some("success".into()),
+            },
+        };
+
+        assert!(should_skip_poll_for_runtime_state(&snapshot));
     }
 }

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { buildGroupViewModel } from "../../shared/view-models";
+import { buildGroupViewModel, getSnapshotRuntimeStatus } from "../../shared/view-models";
 import {
   createWatchGroupInput,
   toConfigInput,
@@ -281,6 +281,7 @@ export function MainDashboardPage() {
                 <PollingHealthPanel
                   diagnostics={snapshot.diagnostics}
                   health={snapshot.health}
+                  runtimeStatus={getSnapshotRuntimeStatus(snapshot)}
                   onPollNow={pollNow}
                 />
                 <DiagnosticsPanel

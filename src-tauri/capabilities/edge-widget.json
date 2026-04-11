@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "edge-widget",
+  "description": "Capability for the edge widget window",
+  "windows": ["edge-widget"],
+  "permissions": ["core:default"]
+}

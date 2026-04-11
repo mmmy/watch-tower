@@ -1,4 +1,4 @@
-import type { AppSnapshot, NormalizedSignal } from "./alert-model";
+import type { AppSnapshot, NormalizedGroupSnapshot, NormalizedSignal, PollingStatus } from "./alert-model";
 import { normalizeGroupSnapshot } from "./alert-model";
 
 export interface GroupViewModel {
@@ -6,6 +6,16 @@ export interface GroupViewModel {
   selectedSignal: NormalizedSignal | null;
   activeSignalType: string;
   activePeriod: string;
+}
+
+export interface ResidentWidgetViewModel {
+  state: "ready" | "bootstrapRequired" | "noGroups";
+  groupSnapshot: NormalizedGroupSnapshot | null;
+  runtimeStatus: PollingStatus;
+}
+
+export function getSnapshotRuntimeStatus(snapshot: AppSnapshot): PollingStatus {
+  return snapshot.runtime.pollingPaused ? "paused" : snapshot.health.status;
 }
 
 export function buildGroupViewModel(
@@ -38,5 +48,37 @@ export function buildGroupViewModel(
     selectedSignal,
     activeSignalType: resolvedSignalType,
     activePeriod: resolvedPeriod ?? "",
+  };
+}
+
+export function buildResidentWidgetViewModel(
+  snapshot: AppSnapshot,
+  nowMs = Date.now(),
+): ResidentWidgetViewModel {
+  if (snapshot.bootstrapRequired || !snapshot.config) {
+    return {
+      state: "bootstrapRequired",
+      groupSnapshot: null,
+      runtimeStatus: getSnapshotRuntimeStatus(snapshot),
+    };
+  }
+
+  if (snapshot.config.groups.length === 0) {
+    return {
+      state: "noGroups",
+      groupSnapshot: null,
+      runtimeStatus: getSnapshotRuntimeStatus(snapshot),
+    };
+  }
+
+  return {
+    state: "ready",
+    groupSnapshot: normalizeGroupSnapshot(
+      snapshot.config,
+      snapshot.config.selectedGroupId,
+      snapshot.rawResponse,
+      nowMs,
+    ),
+    runtimeStatus: getSnapshotRuntimeStatus(snapshot),
   };
 }

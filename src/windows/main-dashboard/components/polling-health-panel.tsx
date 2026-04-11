@@ -4,6 +4,7 @@ import { formatTimestamp } from "../../../shared/period-utils";
 interface PollingHealthPanelProps {
   health: PollingHealth;
   diagnostics: DiagnosticsInfo;
+  runtimeStatus?: string;
   onPollNow: () => void;
 }
 
@@ -26,8 +27,11 @@ function getHealthChipClass(status: PollingHealth["status"]) {
 export function PollingHealthPanel({
   health,
   diagnostics,
+  runtimeStatus,
   onPollNow,
 }: PollingHealthPanelProps) {
+  const resolvedRuntimeStatus = runtimeStatus ?? health.status;
+
   return (
     <section className="panel section">
       <div className="section__header">
@@ -41,7 +45,9 @@ export function PollingHealthPanel({
       </div>
 
       <div className="status-row">
-        <span className={`status-chip ${getHealthChipClass(health.status)}`}>{health.status}</span>
+        <span className={`status-chip ${getHealthChipClass(resolvedRuntimeStatus as PollingHealth["status"])}`}>
+          {resolvedRuntimeStatus}
+        </span>
         <span className={`status-chip ${health.isStale ? "status-chip--warning" : "status-chip--neutral"}`}>
           {health.isStale ? "stale snapshot" : "live snapshot"}
         </span>
