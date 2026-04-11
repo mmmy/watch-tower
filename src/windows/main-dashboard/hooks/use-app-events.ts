@@ -115,6 +115,10 @@ function createFallbackSnapshot(configOverride?: AppConfig): AppSnapshot {
       lastSuccessfulSyncAt: now - 12_000,
       nextRetryAt: null,
     },
+    runtime: {
+      pollingPaused: false,
+      lastActiveStatus: null,
+    },
   };
 }
 

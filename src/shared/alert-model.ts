@@ -25,11 +25,17 @@ export type PollingStatus =
   | "bootstrapRequired"
   | "idle"
   | "polling"
+  | "paused"
   | "success"
   | "authError"
   | "backoff"
   | "configError"
   | "requestError";
+
+export interface RuntimeInfo {
+  pollingPaused: boolean;
+  lastActiveStatus: PollingStatus | null;
+}
 
 export interface DiagnosticsInfo {
   source: "system" | "config" | "request" | "normalization";
@@ -52,6 +58,7 @@ export interface AppSnapshot {
   rawResponse: ApiSignalsResponse | null;
   health: PollingHealth;
   diagnostics: DiagnosticsInfo;
+  runtime: RuntimeInfo;
 }
 
 export interface NormalizedSignal {

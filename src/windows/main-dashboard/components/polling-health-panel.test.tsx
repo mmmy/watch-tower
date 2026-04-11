@@ -7,6 +7,7 @@ describe("PollingHealthPanel", () => {
     render(
       <PollingHealthPanel
         health={{ status: "backoff", pollingIntervalSeconds: 60, isStale: true }}
+        runtimeStatus="paused"
         diagnostics={{
           source: "request",
           code: "HTTP_429",
@@ -19,7 +20,7 @@ describe("PollingHealthPanel", () => {
       />,
     );
 
-    expect(screen.getByText("backoff")).toBeInTheDocument();
+    expect(screen.getByText("paused")).toBeInTheDocument();
     expect(screen.getByText("stale snapshot")).toBeInTheDocument();
   });
 });

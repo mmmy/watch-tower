@@ -48,6 +48,10 @@ describe("MainDashboardPage", () => {
           lastSuccessfulSyncAt: null,
           nextRetryAt: null,
         },
+        runtime: {
+          pollingPaused: false,
+          lastActiveStatus: null,
+        },
       },
       isSaving: false,
       submitError: null,
@@ -88,6 +92,10 @@ describe("MainDashboardPage", () => {
           lastAttemptAt: null,
           lastSuccessfulSyncAt: null,
           nextRetryAt: null,
+        },
+        runtime: {
+          pollingPaused: false,
+          lastActiveStatus: null,
         },
       },
       isSaving: false,

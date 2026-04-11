@@ -56,6 +56,13 @@ pub struct PollingHealth {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct RuntimeInfo {
+    pub polling_paused: bool,
+    pub last_active_status: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct DiagnosticsInfo {
     pub source: String,
     pub code: Option<String>,
@@ -73,6 +80,7 @@ pub struct AppSnapshot {
     pub raw_response: Option<ApiSignalsResponse>,
     pub health: PollingHealth,
     pub diagnostics: DiagnosticsInfo,
+    pub runtime: RuntimeInfo,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -155,6 +163,10 @@ impl AppSnapshot {
                     last_successful_sync_at: None,
                     next_retry_at: None,
                 },
+                runtime: RuntimeInfo {
+                    polling_paused: false,
+                    last_active_status: None,
+                },
             },
             None => Self {
                 bootstrap_required: true,
@@ -174,6 +186,10 @@ impl AppSnapshot {
                     last_attempt_at: None,
                     last_successful_sync_at: None,
                     next_retry_at: None,
+                },
+                runtime: RuntimeInfo {
+                    polling_paused: false,
+                    last_active_status: None,
                 },
             },
         }
