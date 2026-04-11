@@ -112,7 +112,7 @@ pub fn build_signal_request_body(config: &AppConfig) -> serde_json::Value {
 #[cfg(test)]
 mod tests {
     use super::build_signal_request_body;
-    use crate::app_state::{AppConfig, WatchGroupConfig};
+    use crate::app_state::{AppConfig, DashboardPreferences, WatchGroupConfig, WindowPolicyConfig};
 
     #[test]
     fn builds_union_request_body_across_groups() {
@@ -137,6 +137,16 @@ mod tests {
                     selected_timeline_period: "15".into(),
                 },
             ],
+            dashboard: DashboardPreferences {
+                layout_preset: "table".into(),
+                density: "comfortable".into(),
+            },
+            window_policy: WindowPolicyConfig {
+                dock_side: "right".into(),
+                widget_width: 280,
+                widget_height: 720,
+                top_offset: 96,
+            },
         };
 
         let payload = build_signal_request_body(&config);

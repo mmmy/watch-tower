@@ -40,6 +40,18 @@ export function ConfigSummary({ config }: ConfigSummaryProps) {
           <div className="summary-item__label">Timeline focus</div>
           <div className="summary-item__value">{getPeriodLabel(selectedGroup.selectedTimelinePeriod)}</div>
         </div>
+        <div className="summary-item">
+          <div className="summary-item__label">Layout</div>
+          <div className="summary-item__value">
+            {config.dashboard.layoutPreset} · {config.dashboard.density}
+          </div>
+        </div>
+        <div className="summary-item">
+          <div className="summary-item__label">Widget dock</div>
+          <div className="summary-item__value">
+            {config.windowPolicy.dockSide} · {config.windowPolicy.widgetWidth}×{config.windowPolicy.widgetHeight}
+          </div>
+        </div>
       </div>
     </section>
   );

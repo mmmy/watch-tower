@@ -41,13 +41,15 @@ body {
 
 button,
 input,
-textarea {
+textarea,
+select {
   font: inherit;
 }
 
 button:focus-visible,
 input:focus-visible,
-textarea:focus-visible {
+textarea:focus-visible,
+select:focus-visible {
   outline: 2px solid rgba(232, 178, 84, 0.9);
   outline-offset: 2px;
 }
@@ -146,6 +148,20 @@ textarea:focus-visible {
   grid-template-columns: minmax(280px, 340px) 1fr;
   gap: 18px;
   animation: rise-in 520ms ease-out;
+}
+
+.dashboard-shell {
+  display: grid;
+  grid-template-columns: minmax(240px, 0.9fr) minmax(0, 1.4fr) minmax(300px, 1fr);
+  gap: 18px;
+  align-items: start;
+  animation: rise-in 520ms ease-out;
+}
+
+.dashboard-shell__sidebar,
+.dashboard-shell__main,
+.dashboard-shell__aside {
+  min-width: 0;
 }
 
 .stack {
@@ -262,7 +278,8 @@ textarea:focus-visible {
 }
 
 .field input,
-.field textarea {
+.field textarea,
+.field select {
   width: 100%;
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 16px;
@@ -275,6 +292,14 @@ textarea:focus-visible {
 
 .field textarea {
   min-height: 82px;
+}
+
+.field select {
+  min-height: 48px;
+}
+
+.field-grid--three {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 .field__hint,
@@ -309,6 +334,91 @@ textarea:focus-visible {
   color: var(--text-main);
   font-size: 14px;
   word-break: break-word;
+}
+
+.group-list {
+  display: grid;
+  gap: 10px;
+}
+
+.group-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  padding: 10px;
+  border-radius: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.group-card--active {
+  border-color: rgba(232, 178, 84, 0.35);
+  background: rgba(232, 178, 84, 0.1);
+}
+
+.group-card__body {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  display: grid;
+  gap: 6px;
+  padding: 0;
+}
+
+.group-card__title {
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.group-card__meta {
+  color: var(--text-soft);
+  font-size: 12px;
+}
+
+.button--ghost {
+  padding-inline: 12px;
+  background: transparent;
+  color: var(--text-soft);
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+.segmented-control {
+  display: inline-grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  padding: 4px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.segmented-control__item {
+  border: 0;
+  padding: 9px 14px;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-soft);
+}
+
+.segmented-control__item--active {
+  background: rgba(232, 178, 84, 0.18);
+  color: var(--accent);
+}
+
+.dashboard-detail {
+  display: grid;
+  gap: 18px;
+}
+
+.dashboard-detail--table {
+  grid-template-columns: minmax(0, 1.2fr) minmax(280px, 0.8fr);
+  align-items: start;
+}
+
+.dashboard-detail--list {
+  grid-template-columns: 1fr;
 }
 
 .matrix {
@@ -460,7 +570,9 @@ textarea:focus-visible {
 
 @media (max-width: 1120px) {
   .dashboard__hero,
-  .panel-grid {
+  .panel-grid,
+  .dashboard-shell,
+  .dashboard-detail--table {
     grid-template-columns: 1fr;
   }
 }
@@ -476,6 +588,7 @@ textarea:focus-visible {
   }
 
   .field-grid--two,
+  .field-grid--three,
   .matrix__row {
     grid-template-columns: 1fr;
   }
