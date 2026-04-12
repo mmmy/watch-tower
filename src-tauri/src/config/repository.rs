@@ -43,6 +43,7 @@ mod tests {
             api_base_url: "https://example.com".into(),
             api_key: "secret".into(),
             polling_interval_seconds: 60,
+            notifications_enabled: true,
             selected_group_id: "btcusdt".into(),
             groups: vec![WatchGroupConfig {
                 id: "btcusdt".into(),

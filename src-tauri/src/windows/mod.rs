@@ -1,3 +1,4 @@
+pub mod alert_popup;
 pub mod edge_widget;
 pub mod positioning;
 
@@ -12,6 +13,7 @@ pub fn initialize_resident_surfaces(
 ) -> Result<(), String> {
     crate::tray::init(app, snapshot)?;
     edge_widget::sync_edge_widget(app, snapshot)?;
+    alert_popup::sync_alert_popup(app, snapshot)?;
     Ok(())
 }
 
@@ -21,6 +23,7 @@ pub fn sync_resident_surfaces(
 ) -> Result<(), String> {
     crate::tray::sync(app, snapshot)?;
     edge_widget::sync_edge_widget(app, snapshot)?;
+    alert_popup::sync_alert_popup(app, snapshot)?;
     Ok(())
 }
 

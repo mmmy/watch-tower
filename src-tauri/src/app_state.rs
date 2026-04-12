@@ -38,6 +38,8 @@ pub struct AppConfig {
     pub api_base_url: String,
     pub api_key: String,
     pub polling_interval_seconds: u64,
+    #[serde(default = "default_notifications_enabled")]
+    pub notifications_enabled: bool,
     pub selected_group_id: String,
     pub groups: Vec<WatchGroupConfig>,
     #[serde(default = "default_dashboard_preferences")]
@@ -61,6 +63,41 @@ pub struct RuntimeInfo {
     pub last_active_status: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct AlertPayload {
+    pub id: String,
+    pub group_id: String,
+    pub symbol: String,
+    pub period: String,
+    pub signal_type: String,
+    pub side: i8,
+    pub signal_at: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct PendingReadState {
+    pub alert: AlertPayload,
+    pub requested_at: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct DashboardFocusIntent {
+    pub alert: AlertPayload,
+    pub requested_at: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct AlertRuntime {
+    pub active_alert: Option<AlertPayload>,
+    pub pending_alerts: Vec<AlertPayload>,
+    pub pending_read: Option<PendingReadState>,
+    pub dashboard_focus_intent: Option<DashboardFocusIntent>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DiagnosticsInfo {
@@ -81,6 +118,7 @@ pub struct AppSnapshot {
     pub health: PollingHealth,
     pub diagnostics: DiagnosticsInfo,
     pub runtime: RuntimeInfo,
+    pub alert_runtime: AlertRuntime,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -167,6 +205,7 @@ impl AppSnapshot {
                     polling_paused: false,
                     last_active_status: None,
                 },
+                alert_runtime: AlertRuntime::default(),
             },
             None => Self {
                 bootstrap_required: true,
@@ -191,8 +230,98 @@ impl AppSnapshot {
                     polling_paused: false,
                     last_active_status: None,
                 },
+                alert_runtime: AlertRuntime::default(),
             },
         }
+    }
+}
+
+impl AlertRuntime {
+    pub fn contains_alert_id(&self, alert_id: &str) -> bool {
+        self.active_alert
+            .as_ref()
+            .is_some_and(|alert| alert.id == alert_id)
+            || self
+                .pending_alerts
+                .iter()
+                .any(|alert| alert.id == alert_id)
+            || self
+                .pending_read
+                .as_ref()
+                .is_some_and(|pending| pending.alert.id == alert_id)
+    }
+
+    pub fn enqueue_new_alerts(&mut self, alerts: Vec<AlertPayload>) {
+        for alert in alerts {
+            if self.contains_alert_id(&alert.id) {
+                continue;
+            }
+
+            if self.active_alert.is_none() {
+                self.active_alert = Some(alert);
+                continue;
+            }
+
+            self.pending_alerts.push(alert);
+        }
+    }
+
+    pub fn suppressed_alert_ids(&self) -> Vec<String> {
+        self.pending_read
+            .iter()
+            .map(|pending| pending.alert.id.clone())
+            .collect()
+    }
+
+    pub fn mark_pending_read(&mut self, alert: AlertPayload, requested_at: u64) {
+        self.pending_read = Some(PendingReadState {
+            alert,
+            requested_at,
+        });
+    }
+
+    pub fn resolve_pending_read(&mut self, succeeded: bool) {
+        let Some(pending_read) = self.pending_read.take() else {
+            return;
+        };
+
+        if !succeeded {
+            return;
+        }
+
+        let pending_alert_id = pending_read.alert.id;
+
+        if self
+            .active_alert
+            .as_ref()
+            .is_some_and(|alert| alert.id == pending_alert_id)
+        {
+            self.active_alert = None;
+        } else {
+            self.pending_alerts
+                .retain(|alert| alert.id != pending_alert_id);
+        }
+
+        self.promote_next_alert();
+    }
+
+    pub fn promote_next_alert(&mut self) {
+        if self.active_alert.is_some() || self.pending_read.is_some() || self.pending_alerts.is_empty() {
+            return;
+        }
+
+        self.active_alert = Some(self.pending_alerts.remove(0));
+    }
+
+    pub fn set_dashboard_focus_intent(&mut self, alert: AlertPayload, requested_at: u64) {
+        self.dashboard_focus_intent = Some(DashboardFocusIntent {
+            alert,
+            requested_at,
+        });
+    }
+
+    pub fn clear_dashboard_focus_intent(&mut self) {
+        self.dashboard_focus_intent = None;
     }
 }
 
@@ -210,4 +339,8 @@ fn default_window_policy() -> WindowPolicyConfig {
         widget_height: 720,
         top_offset: 96,
     }
+}
+
+fn default_notifications_enabled() -> bool {
+    true
 }

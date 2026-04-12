@@ -19,6 +19,7 @@ describe("sanitizeConfigInput", () => {
     expect(config.groups[0]?.symbol).toBe("BTCUSDT");
     expect(config.groups[0]?.signalTypes).toEqual(["vegas", "divMacd", "tdMd"]);
     expect(config.selectedGroupId).toBe("btcusdt");
+    expect(config.notificationsEnabled).toBe(true);
     expect(config.dashboard.layoutPreset).toBe("table");
     expect(config.windowPolicy.dockSide).toBe("right");
   });
@@ -43,6 +44,7 @@ describe("sanitizeConfigInput", () => {
       selectedGroupId: "eth-swing",
       layoutPreset: "list",
       density: "compact",
+      notificationsEnabled: false,
       windowPolicy: {
         dockSide: "left",
         widgetWidth: 300,
@@ -76,6 +78,7 @@ describe("sanitizeConfigInput", () => {
       layoutPreset: "list",
       density: "compact",
     });
+    expect(config.notificationsEnabled).toBe(false);
     expect(config.windowPolicy).toEqual({
       dockSide: "left",
       widgetWidth: 300,

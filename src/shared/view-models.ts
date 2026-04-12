@@ -1,4 +1,11 @@
-import type { AppSnapshot, NormalizedGroupSnapshot, NormalizedSignal, PollingStatus } from "./alert-model";
+import type {
+  AlertPayload,
+  AppSnapshot,
+  DashboardFocusIntent,
+  NormalizedGroupSnapshot,
+  NormalizedSignal,
+  PollingStatus,
+} from "./alert-model";
 import { normalizeGroupSnapshot } from "./alert-model";
 
 export interface GroupViewModel {
@@ -12,6 +19,13 @@ export interface ResidentWidgetViewModel {
   state: "ready" | "bootstrapRequired" | "noGroups";
   groupSnapshot: NormalizedGroupSnapshot | null;
   runtimeStatus: PollingStatus;
+}
+
+export interface AlertPopupViewModel {
+  state: "idle" | "active";
+  alert: AlertPayload | null;
+  runtimeStatus: PollingStatus;
+  isPendingRead: boolean;
 }
 
 export function getSnapshotRuntimeStatus(snapshot: AppSnapshot): PollingStatus {
@@ -81,4 +95,22 @@ export function buildResidentWidgetViewModel(
     ),
     runtimeStatus: getSnapshotRuntimeStatus(snapshot),
   };
+}
+
+export function buildAlertPopupViewModel(snapshot: AppSnapshot): AlertPopupViewModel {
+  const activeAlert = snapshot.alertRuntime.activeAlert;
+  const pendingAlertId = snapshot.alertRuntime.pendingRead?.alert.id;
+
+  return {
+    state: activeAlert ? "active" : "idle",
+    alert: activeAlert,
+    runtimeStatus: getSnapshotRuntimeStatus(snapshot),
+    isPendingRead: Boolean(activeAlert && pendingAlertId === activeAlert.id),
+  };
+}
+
+export function getDashboardFocusIntent(
+  snapshot: AppSnapshot,
+): DashboardFocusIntent | null {
+  return snapshot.alertRuntime.dashboardFocusIntent;
 }

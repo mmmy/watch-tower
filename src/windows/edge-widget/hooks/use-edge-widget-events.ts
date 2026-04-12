@@ -72,6 +72,12 @@ function createFallbackSnapshot(): AppSnapshot {
       pollingPaused: false,
       lastActiveStatus: null,
     },
+    alertRuntime: {
+      activeAlert: null,
+      pendingAlerts: [],
+      pendingRead: null,
+      dashboardFocusIntent: null,
+    },
   };
 }
 

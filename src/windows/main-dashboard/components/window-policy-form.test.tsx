@@ -11,6 +11,7 @@ describe("WindowPolicyForm", () => {
       <WindowPolicyForm
         layoutPreset="table"
         density="comfortable"
+        notificationsEnabled
         windowPolicy={{
           dockSide: "right",
           widgetWidth: 280,
@@ -28,6 +29,9 @@ describe("WindowPolicyForm", () => {
     });
     fireEvent.change(screen.getByLabelText("Default dock side"), {
       target: { value: "left" },
+    });
+    fireEvent.change(screen.getByLabelText("System notifications"), {
+      target: { value: "disabled" },
     });
     fireEvent.click(screen.getByRole("button", { name: /save layout policy/i }));
 

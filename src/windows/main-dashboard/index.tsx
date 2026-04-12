@@ -19,7 +19,15 @@ import { WindowPolicyForm } from "./components/window-policy-form";
 import { useAppEvents } from "./hooks/use-app-events";
 
 export function MainDashboardPage() {
-  const { snapshot, isSaving, submitError, saveConfig, pollNow, selectGroup } = useAppEvents();
+  const {
+    snapshot,
+    isSaving,
+    submitError,
+    saveConfig,
+    pollNow,
+    selectGroup,
+    clearDashboardFocusIntent,
+  } = useAppEvents();
   const [activePeriod, setActivePeriod] = useState<string | undefined>(undefined);
   const [activeSignalType, setActiveSignalType] = useState<string | undefined>(undefined);
   const [draftConfig, setDraftConfig] = useState<AppConfigInput | null>(null);
@@ -37,6 +45,18 @@ export function MainDashboardPage() {
 
     setDraftConfig(toConfigInput(snapshot.config));
   }, [configSyncKey, snapshot?.config]);
+
+  useEffect(() => {
+    const focusIntent = snapshot?.alertRuntime.dashboardFocusIntent;
+
+    if (!focusIntent) {
+      return;
+    }
+
+    setActivePeriod(focusIntent.alert.period);
+    setActiveSignalType(focusIntent.alert.signalType);
+    void clearDashboardFocusIntent();
+  }, [clearDashboardFocusIntent, snapshot?.alertRuntime.dashboardFocusIntent]);
 
   const viewModel = useMemo(
     () => (snapshot ? buildGroupViewModel(snapshot, activePeriod, activeSignalType) : null),
@@ -256,6 +276,7 @@ export function MainDashboardPage() {
                 <WindowPolicyForm
                   layoutPreset={draftConfig.layoutPreset ?? "table"}
                   density={draftConfig.density ?? "comfortable"}
+                  notificationsEnabled={draftConfig.notificationsEnabled ?? true}
                   windowPolicy={draftConfig.windowPolicy}
                   isSaving={isSaving}
                   onChange={(nextPolicy) =>
@@ -265,6 +286,7 @@ export function MainDashboardPage() {
                             ...currentDraft,
                             layoutPreset: nextPolicy.layoutPreset,
                             density: nextPolicy.density,
+                            notificationsEnabled: nextPolicy.notificationsEnabled,
                             windowPolicy: nextPolicy.windowPolicy,
                           }
                         : currentDraft,

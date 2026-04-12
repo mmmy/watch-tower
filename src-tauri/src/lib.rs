@@ -13,6 +13,7 @@ use tauri::Manager;
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_notification::init())
         .setup(|app| {
             let config_dir = app
                 .path()
@@ -39,7 +40,11 @@ pub fn run() {
             commands::select_group,
             commands::poll_now,
             commands::pause_polling,
-            commands::resume_polling
+            commands::resume_polling,
+            commands::mark_alert_read,
+            commands::open_alert_in_dashboard,
+            commands::clear_dashboard_focus_intent,
+            commands::set_notifications_enabled
         ])
         .run(tauri::generate_context!())
         .expect("error while running watch tower");

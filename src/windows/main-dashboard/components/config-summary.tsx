@@ -52,6 +52,12 @@ export function ConfigSummary({ config }: ConfigSummaryProps) {
             {config.windowPolicy.dockSide} · {config.windowPolicy.widgetWidth}×{config.windowPolicy.widgetHeight}
           </div>
         </div>
+        <div className="summary-item">
+          <div className="summary-item__label">Notifications</div>
+          <div className="summary-item__value">
+            {config.notificationsEnabled ? "System notifications enabled" : "Popup only"}
+          </div>
+        </div>
       </div>
     </section>
   );

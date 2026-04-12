@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { AppSnapshot } from "./alert-model";
 import { sanitizeConfigInput } from "./config-model";
 import {
+  buildAlertPopupViewModel,
   buildGroupViewModel,
   buildResidentWidgetViewModel,
   getSnapshotRuntimeStatus,
@@ -49,6 +50,12 @@ function createSnapshot(overrides?: Partial<AppSnapshot>): AppSnapshot {
     runtime: {
       pollingPaused: false,
       lastActiveStatus: null,
+    },
+    alertRuntime: {
+      activeAlert: null,
+      pendingAlerts: [],
+      pendingRead: null,
+      dashboardFocusIntent: null,
     },
     ...overrides,
   };
@@ -111,5 +118,41 @@ describe("view-models", () => {
     expect(widgetView.state).toBe("noGroups");
     expect(widgetView.groupSnapshot).toBeNull();
     expect(widgetView.runtimeStatus).toBe("configError");
+  });
+
+  it("builds an active popup view when an alert is present", () => {
+    const snapshot = createSnapshot({
+      alertRuntime: {
+        activeAlert: {
+          id: "BTCUSDT:60:vegas",
+          groupId: "btc-core",
+          symbol: "BTCUSDT",
+          period: "60",
+          signalType: "vegas",
+          side: 1,
+          signalAt: 1_000,
+        },
+        pendingAlerts: [],
+        pendingRead: {
+          alert: {
+            id: "BTCUSDT:60:vegas",
+            groupId: "btc-core",
+            symbol: "BTCUSDT",
+            period: "60",
+            signalType: "vegas",
+            side: 1,
+            signalAt: 1_000,
+          },
+          requestedAt: 2_000,
+        },
+        dashboardFocusIntent: null,
+      },
+    });
+
+    const popupView = buildAlertPopupViewModel(snapshot);
+
+    expect(popupView.state).toBe("active");
+    expect(popupView.alert?.id).toBe("BTCUSDT:60:vegas");
+    expect(popupView.isPendingRead).toBe(true);
   });
 });

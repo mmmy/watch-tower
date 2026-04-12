@@ -52,12 +52,19 @@ describe("MainDashboardPage", () => {
           pollingPaused: false,
           lastActiveStatus: null,
         },
+        alertRuntime: {
+          activeAlert: null,
+          pendingAlerts: [],
+          pendingRead: null,
+          dashboardFocusIntent: null,
+        },
       },
       isSaving: false,
       submitError: null,
       saveConfig: vi.fn(),
       pollNow: vi.fn(),
       selectGroup: vi.fn(),
+      clearDashboardFocusIntent: vi.fn(),
     });
 
     render(<MainDashboardPage />);
@@ -97,12 +104,19 @@ describe("MainDashboardPage", () => {
           pollingPaused: false,
           lastActiveStatus: null,
         },
+        alertRuntime: {
+          activeAlert: null,
+          pendingAlerts: [],
+          pendingRead: null,
+          dashboardFocusIntent: null,
+        },
       },
       isSaving: false,
       submitError: null,
       saveConfig: vi.fn(),
       pollNow: vi.fn(),
       selectGroup: vi.fn(),
+      clearDashboardFocusIntent: vi.fn(),
     });
 
     render(<MainDashboardPage />);
