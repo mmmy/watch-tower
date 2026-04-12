@@ -37,6 +37,33 @@ export interface RuntimeInfo {
   lastActiveStatus: PollingStatus | null;
 }
 
+export interface AlertPayload {
+  id: string;
+  groupId: string;
+  symbol: string;
+  period: string;
+  signalType: string;
+  side: 1 | -1;
+  signalAt: number;
+}
+
+export interface PendingReadState {
+  alert: AlertPayload;
+  requestedAt: number;
+}
+
+export interface DashboardFocusIntent {
+  alert: AlertPayload;
+  requestedAt: number;
+}
+
+export interface AlertRuntime {
+  activeAlert: AlertPayload | null;
+  pendingAlerts: AlertPayload[];
+  pendingRead: PendingReadState | null;
+  dashboardFocusIntent: DashboardFocusIntent | null;
+}
+
 export interface DiagnosticsInfo {
   source: "system" | "config" | "request" | "normalization";
   code: string | null;
@@ -59,6 +86,7 @@ export interface AppSnapshot {
   health: PollingHealth;
   diagnostics: DiagnosticsInfo;
   runtime: RuntimeInfo;
+  alertRuntime: AlertRuntime;
 }
 
 export interface NormalizedSignal {

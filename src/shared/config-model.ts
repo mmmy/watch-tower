@@ -58,6 +58,7 @@ export interface AppConfig {
   apiBaseUrl: string;
   apiKey: string;
   pollingIntervalSeconds: number;
+  notificationsEnabled: boolean;
   selectedGroupId: string;
   groups: WatchGroupConfig[];
   dashboard: DashboardPreferences;
@@ -76,6 +77,7 @@ export interface AppConfigInput {
   apiBaseUrl: string;
   apiKey: string;
   pollingIntervalSeconds: number;
+  notificationsEnabled?: boolean;
   symbol?: string;
   signalTypesText?: string;
   selectedGroupId?: string;
@@ -119,6 +121,7 @@ export function sanitizeConfigInput(input: AppConfigInput): AppConfig {
     apiBaseUrl: baseUrl,
     apiKey: input.apiKey.trim(),
     pollingIntervalSeconds,
+    notificationsEnabled: input.notificationsEnabled ?? true,
     selectedGroupId,
     groups,
     dashboard: {
@@ -139,6 +142,7 @@ export function toConfigInput(config: AppConfig): AppConfigInput {
     apiBaseUrl: config.apiBaseUrl,
     apiKey: config.apiKey,
     pollingIntervalSeconds: config.pollingIntervalSeconds,
+    notificationsEnabled: config.notificationsEnabled,
     selectedGroupId: config.selectedGroupId,
     layoutPreset: config.dashboard.layoutPreset,
     density: config.dashboard.density,

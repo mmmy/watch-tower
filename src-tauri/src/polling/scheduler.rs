@@ -4,8 +4,11 @@ use crate::app_state::{
 };
 use crate::polling::alerts_client::{self, FetchError};
 use crate::polling::backoff::{clamp_polling_interval, compute_backoff_until, sleep_duration_ms};
+use crate::polling::unread_diff::compute_new_unread_alerts;
+use std::collections::HashSet;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Emitter};
+use tauri_plugin_notification::NotificationExt;
 
 pub fn spawn(app: AppHandle, state: SharedAppState) {
     tauri::async_runtime::spawn(async move {
@@ -104,29 +107,46 @@ pub async fn poll_once(app: &AppHandle, state: SharedAppState) -> Result<AppSnap
     emit_snapshot(app, &polling_snapshot)?;
     crate::windows::sync_resident_surfaces(app, &polling_snapshot)?;
 
-    let runtime = state.current_snapshot().await.runtime.clone();
+    let snapshot_before_fetch = state.current_snapshot().await;
+    let runtime = snapshot_before_fetch.runtime.clone();
+    let mut alert_runtime = snapshot_before_fetch.alert_runtime.clone();
     let next_snapshot = match alerts_client::fetch_signals(&state.http_client, &config).await {
-        Ok(response) => AppSnapshot {
-            bootstrap_required: false,
-            config: Some(config.clone()),
-            raw_response: Some(response),
-            health: PollingHealth {
-                status: "success".into(),
-                polling_interval_seconds: Some(clamp_polling_interval(
-                    config.polling_interval_seconds,
-                )),
-                is_stale: false,
-            },
-            diagnostics: DiagnosticsInfo {
-                source: "system".into(),
-                code: Some("SYNC_OK".into()),
-                message: "Latest signal snapshot loaded successfully.".into(),
-                last_attempt_at: Some(attempt_started_at),
-                last_successful_sync_at: Some(attempt_started_at),
-                next_retry_at: None,
-            },
-            runtime,
-        },
+        Ok(response) => {
+            let suppressed_alert_ids = HashSet::from_iter(alert_runtime.suppressed_alert_ids());
+            let new_alerts = compute_new_unread_alerts(
+                &config,
+                snapshot_before_fetch.raw_response.as_ref(),
+                &response,
+                &suppressed_alert_ids,
+            );
+            if config.notifications_enabled {
+                send_system_notifications(app, &new_alerts);
+            }
+            alert_runtime.enqueue_new_alerts(new_alerts);
+
+            AppSnapshot {
+                bootstrap_required: false,
+                config: Some(config.clone()),
+                raw_response: Some(response),
+                health: PollingHealth {
+                    status: "success".into(),
+                    polling_interval_seconds: Some(clamp_polling_interval(
+                        config.polling_interval_seconds,
+                    )),
+                    is_stale: false,
+                },
+                diagnostics: DiagnosticsInfo {
+                    source: "system".into(),
+                    code: Some("SYNC_OK".into()),
+                    message: "Latest signal snapshot loaded successfully.".into(),
+                    last_attempt_at: Some(attempt_started_at),
+                    last_successful_sync_at: Some(attempt_started_at),
+                    next_retry_at: None,
+                },
+                runtime,
+                alert_runtime,
+            }
+        }
         Err(FetchError::Unauthorized) => {
             state
                 .update_with(|snapshot| {
@@ -242,6 +262,24 @@ fn now() -> u64 {
         .as_millis() as u64
 }
 
+fn send_system_notifications(app: &AppHandle, alerts: &[crate::app_state::AlertPayload]) {
+    for alert in alerts {
+        let title = format!("{} {} {}", alert.symbol, alert.period, alert.signal_type);
+        let body = if alert.side > 0 {
+            "New bullish signal detected."
+        } else {
+            "New bearish signal detected."
+        };
+
+        let _ = app
+            .notification()
+            .builder()
+            .title(title)
+            .body(body)
+            .show();
+    }
+}
+
 fn build_empty_groups_snapshot(
     current_snapshot: &AppSnapshot,
     config: &crate::app_state::AppConfig,
@@ -265,6 +303,7 @@ fn build_empty_groups_snapshot(
             next_retry_at: None,
         },
         runtime: current_snapshot.runtime.clone(),
+        alert_runtime: current_snapshot.alert_runtime.clone(),
     }
 }
 
@@ -276,8 +315,8 @@ fn should_skip_poll_for_runtime_state(snapshot: &AppSnapshot) -> bool {
 mod tests {
     use super::{build_empty_groups_snapshot, should_skip_poll_for_runtime_state, sleep_duration_ms};
     use crate::app_state::{
-        AppConfig, AppSnapshot, DashboardPreferences, DiagnosticsInfo, PollingHealth, RuntimeInfo,
-        WindowPolicyConfig,
+        AlertRuntime, AppConfig, AppSnapshot, DashboardPreferences, DiagnosticsInfo,
+        PollingHealth, RuntimeInfo, WindowPolicyConfig,
     };
 
     #[test]
@@ -308,11 +347,13 @@ mod tests {
                 polling_paused: false,
                 last_active_status: None,
             },
+            alert_runtime: AlertRuntime::default(),
         };
         let config = AppConfig {
             api_base_url: "https://example.com".into(),
             api_key: "secret".into(),
             polling_interval_seconds: 60,
+            notifications_enabled: true,
             selected_group_id: "".into(),
             groups: vec![],
             dashboard: DashboardPreferences {
@@ -361,6 +402,7 @@ mod tests {
                 polling_paused: true,
                 last_active_status: Some("success".into()),
             },
+            alert_runtime: AlertRuntime::default(),
         };
 
         assert!(should_skip_poll_for_runtime_state(&snapshot));

@@ -9,11 +9,13 @@ import { LayoutPresetToggle } from "./layout-preset-toggle";
 interface WindowPolicyFormProps {
   layoutPreset: DashboardLayoutPreset;
   density: DashboardDensity;
+  notificationsEnabled: boolean;
   windowPolicy: Partial<WindowPolicyConfig> | undefined;
   isSaving: boolean;
   onChange: (next: {
     layoutPreset: DashboardLayoutPreset;
     density: DashboardDensity;
+    notificationsEnabled: boolean;
     windowPolicy: Partial<WindowPolicyConfig>;
   }) => void;
   onSave: () => void;
@@ -22,6 +24,7 @@ interface WindowPolicyFormProps {
 export function WindowPolicyForm({
   layoutPreset,
   density,
+  notificationsEnabled,
   windowPolicy,
   isSaving,
   onChange,
@@ -54,6 +57,7 @@ export function WindowPolicyForm({
             onChange({
               layoutPreset: nextLayoutPreset,
               density,
+              notificationsEnabled,
               windowPolicy: nextWindowPolicy,
             })
           }
@@ -70,6 +74,7 @@ export function WindowPolicyForm({
               onChange({
                 layoutPreset,
                 density: event.currentTarget.value as DashboardDensity,
+                notificationsEnabled,
                 windowPolicy: nextWindowPolicy,
               })
             }
@@ -88,6 +93,7 @@ export function WindowPolicyForm({
               onChange({
                 layoutPreset,
                 density,
+                notificationsEnabled,
                 windowPolicy: {
                   ...nextWindowPolicy,
                   dockSide: event.currentTarget.value as DockSide,
@@ -99,6 +105,25 @@ export function WindowPolicyForm({
             <option value="right">Right</option>
           </select>
         </div>
+      </div>
+
+      <div className="field">
+        <label htmlFor="notifications-enabled">System notifications</label>
+        <select
+          id="notifications-enabled"
+          value={notificationsEnabled ? "enabled" : "disabled"}
+          onChange={(event) =>
+            onChange({
+              layoutPreset,
+              density,
+              notificationsEnabled: event.currentTarget.value === "enabled",
+              windowPolicy: nextWindowPolicy,
+            })
+          }
+        >
+          <option value="enabled">Enabled</option>
+          <option value="disabled">Disabled</option>
+        </select>
       </div>
 
       <div className="field-grid field-grid--three">
@@ -113,6 +138,7 @@ export function WindowPolicyForm({
               onChange({
                 layoutPreset,
                 density,
+                notificationsEnabled,
                 windowPolicy: {
                   ...nextWindowPolicy,
                   widgetWidth: Number(event.currentTarget.value),
@@ -133,6 +159,7 @@ export function WindowPolicyForm({
               onChange({
                 layoutPreset,
                 density,
+                notificationsEnabled,
                 windowPolicy: {
                   ...nextWindowPolicy,
                   widgetHeight: Number(event.currentTarget.value),
@@ -153,6 +180,7 @@ export function WindowPolicyForm({
               onChange({
                 layoutPreset,
                 density,
+                notificationsEnabled,
                 windowPolicy: {
                   ...nextWindowPolicy,
                   topOffset: Number(event.currentTarget.value),

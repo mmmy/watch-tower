@@ -119,6 +119,12 @@ function createFallbackSnapshot(configOverride?: AppConfig): AppSnapshot {
       pollingPaused: false,
       lastActiveStatus: null,
     },
+    alertRuntime: {
+      activeAlert: null,
+      pendingAlerts: [],
+      pendingRead: null,
+      dashboardFocusIntent: null,
+    },
   };
 }
 
@@ -213,6 +219,26 @@ export function useAppEvents() {
     setSnapshot(nextSnapshot);
   }, []);
 
+  const clearDashboardFocusIntent = useCallback(async () => {
+    if (!isTauriRuntime()) {
+      setSnapshot((currentSnapshot) =>
+        currentSnapshot
+          ? {
+              ...currentSnapshot,
+              alertRuntime: {
+                ...currentSnapshot.alertRuntime,
+                dashboardFocusIntent: null,
+              },
+            }
+          : currentSnapshot,
+      );
+      return;
+    }
+
+    const nextSnapshot = await invoke<AppSnapshot>("clear_dashboard_focus_intent");
+    setSnapshot(nextSnapshot);
+  }, []);
+
   return useMemo(
     () => ({
       snapshot,
@@ -221,7 +247,8 @@ export function useAppEvents() {
       saveConfig,
       pollNow,
       selectGroup,
+      clearDashboardFocusIntent,
     }),
-    [snapshot, isSaving, submitError, saveConfig, pollNow, selectGroup],
+    [snapshot, isSaving, submitError, saveConfig, pollNow, selectGroup, clearDashboardFocusIntent],
   );
 }

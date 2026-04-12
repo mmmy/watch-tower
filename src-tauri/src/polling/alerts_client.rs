@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 
 const SIGNALS_ENDPOINT: &str = "/api/open/watch-list/symbol-signals";
+const READ_STATUS_ENDPOINT: &str = "/api/open/watch-list/symbol-alert/read-status";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -49,6 +50,15 @@ struct SignalRequestBody {
     page_size: u32,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReadStatusInput {
+    pub symbol: String,
+    pub period: String,
+    pub signal_type: String,
+    pub read: bool,
+}
+
 pub async fn fetch_signals(
     client: &reqwest::Client,
     config: &AppConfig,
@@ -67,6 +77,39 @@ pub async fn fetch_signals(
     if status.is_success() {
         return response
             .json::<ApiSignalsResponse>()
+            .await
+            .map_err(|error| FetchError::Deserialize(error.to_string()));
+    }
+
+    if status == reqwest::StatusCode::UNAUTHORIZED {
+        return Err(FetchError::Unauthorized);
+    }
+
+    if status == reqwest::StatusCode::TOO_MANY_REQUESTS || status.is_server_error() {
+        return Err(FetchError::Backoff(status.as_u16()));
+    }
+
+    Err(FetchError::Http(status.as_u16()))
+}
+
+pub async fn set_read_status(
+    client: &reqwest::Client,
+    config: &AppConfig,
+    input: &ReadStatusInput,
+) -> Result<bool, FetchError> {
+    let response = client
+        .post(format!("{}{}", config.api_base_url, READ_STATUS_ENDPOINT))
+        .header("x-api-key", &config.api_key)
+        .json(input)
+        .send()
+        .await
+        .map_err(|error| FetchError::Network(error.to_string()))?;
+
+    let status = response.status();
+
+    if status.is_success() {
+        return response
+            .json::<bool>()
             .await
             .map_err(|error| FetchError::Deserialize(error.to_string()));
     }
@@ -111,7 +154,7 @@ pub fn build_signal_request_body(config: &AppConfig) -> serde_json::Value {
 
 #[cfg(test)]
 mod tests {
-    use super::build_signal_request_body;
+    use super::{build_signal_request_body, ReadStatusInput};
     use crate::app_state::{AppConfig, DashboardPreferences, WatchGroupConfig, WindowPolicyConfig};
 
     #[test]
@@ -120,6 +163,7 @@ mod tests {
             api_base_url: "https://example.com".into(),
             api_key: "secret".into(),
             polling_interval_seconds: 60,
+            notifications_enabled: true,
             selected_group_id: "btc".into(),
             groups: vec![
                 WatchGroupConfig {
@@ -153,5 +197,21 @@ mod tests {
 
         assert_eq!(payload["symbols"], "BTCUSDT,ETHUSDT");
         assert_eq!(payload["signalTypes"], "divMacd,vegas");
+    }
+
+    #[test]
+    fn serializes_read_status_input_with_the_server_contract_keys() {
+        let payload = serde_json::to_value(ReadStatusInput {
+            symbol: "BTCUSDT".into(),
+            period: "60".into(),
+            signal_type: "vegas".into(),
+            read: true,
+        })
+        .expect("serialize");
+
+        assert_eq!(payload["symbol"], "BTCUSDT");
+        assert_eq!(payload["period"], "60");
+        assert_eq!(payload["signalType"], "vegas");
+        assert_eq!(payload["read"], true);
     }
 }

@@ -1,4 +1,5 @@
 import { MainDashboardPage } from "./windows/main-dashboard";
+import { AlertPopupPage } from "./windows/alert-popup";
 import { EdgeWidgetPage } from "./windows/edge-widget";
 
 function currentWindowLabel() {
@@ -20,7 +21,14 @@ function currentWindowLabel() {
 }
 
 function App() {
-  return currentWindowLabel() === "edge-widget" ? <EdgeWidgetPage /> : <MainDashboardPage />;
+  switch (currentWindowLabel()) {
+    case "edge-widget":
+      return <EdgeWidgetPage />;
+    case "alert-popup":
+      return <AlertPopupPage />;
+    default:
+      return <MainDashboardPage />;
+  }
 }
 
 export default App;

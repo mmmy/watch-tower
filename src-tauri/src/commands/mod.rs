@@ -1,5 +1,7 @@
-use crate::app_state::{AppConfig, AppSnapshot, SharedAppState};
+use crate::app_state::{AlertPayload, AppConfig, AppSnapshot, SharedAppState};
+use crate::polling::alerts_client::{self, ReadStatusInput};
 use crate::polling::scheduler;
+use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, State};
 
 #[tauri::command]
@@ -84,6 +86,158 @@ pub async fn resume_polling(
     set_polling_paused(&app, state.inner().clone(), false).await
 }
 
+#[tauri::command]
+pub async fn mark_alert_read(
+    alert: AlertPayload,
+    app: AppHandle,
+    state: State<'_, SharedAppState>,
+) -> Result<AppSnapshot, String> {
+    let requested_at = now();
+    let pending_snapshot = state
+        .update_with(|snapshot| {
+            snapshot
+                .alert_runtime
+                .mark_pending_read(alert.clone(), requested_at);
+        })
+        .await;
+
+    scheduler::emit_snapshot(&app, &pending_snapshot)?;
+    crate::windows::sync_resident_surfaces(&app, &pending_snapshot)?;
+
+    let config = state
+        .current_config()
+        .await
+        .ok_or_else(|| "Cannot mark alerts as read before config is saved.".to_string())?;
+
+    let result = alerts_client::set_read_status(
+        &state.http_client,
+        &config,
+        &ReadStatusInput {
+            symbol: alert.symbol.clone(),
+            period: alert.period.clone(),
+            signal_type: alert.signal_type.clone(),
+            read: true,
+        },
+    )
+    .await;
+
+    match result {
+        Ok(true) => {
+            let next_snapshot = state
+                .update_with(|snapshot| {
+                    snapshot.alert_runtime.resolve_pending_read(true);
+                })
+                .await;
+
+            scheduler::emit_snapshot(&app, &next_snapshot)?;
+            crate::windows::sync_resident_surfaces(&app, &next_snapshot)?;
+            Ok(next_snapshot)
+        }
+        Ok(false) => {
+            rollback_pending_read(
+                &app,
+                state.inner().clone(),
+                "Server returned false while marking the alert as read.".into(),
+            )
+            .await
+        }
+        Err(error) => {
+            rollback_pending_read(
+                &app,
+                state.inner().clone(),
+                format!("Read-status request failed: {error:?}"),
+            )
+            .await
+        }
+    }
+}
+
+#[tauri::command]
+pub async fn open_alert_in_dashboard(
+    alert: AlertPayload,
+    app: AppHandle,
+    state: State<'_, SharedAppState>,
+) -> Result<AppSnapshot, String> {
+    let current_config = state
+        .current_config()
+        .await
+        .ok_or_else(|| "Cannot open an alert before config is saved.".to_string())?;
+    let next_config = apply_alert_group_selection(&current_config, &alert);
+
+    if next_config.selected_group_id != current_config.selected_group_id {
+        state.repository.save(&next_config)?;
+    }
+
+    let requested_at = now();
+    let next_snapshot = state
+        .update_with(|snapshot| {
+            snapshot.config = Some(next_config.clone());
+            snapshot
+                .alert_runtime
+                .set_dashboard_focus_intent(alert.clone(), requested_at);
+
+            if snapshot
+                .alert_runtime
+                .active_alert
+                .as_ref()
+                .is_some_and(|active_alert| active_alert.id == alert.id)
+            {
+                snapshot.alert_runtime.active_alert = None;
+                snapshot.alert_runtime.promote_next_alert();
+            }
+        })
+        .await;
+
+    crate::windows::restore_main_dashboard(&app)?;
+    scheduler::emit_snapshot(&app, &next_snapshot)?;
+    crate::windows::sync_resident_surfaces(&app, &next_snapshot)?;
+
+    Ok(next_snapshot)
+}
+
+#[tauri::command]
+pub async fn clear_dashboard_focus_intent(
+    app: AppHandle,
+    state: State<'_, SharedAppState>,
+) -> Result<AppSnapshot, String> {
+    let next_snapshot = state
+        .update_with(|snapshot| {
+            snapshot.alert_runtime.clear_dashboard_focus_intent();
+        })
+        .await;
+
+    scheduler::emit_snapshot(&app, &next_snapshot)?;
+    crate::windows::sync_resident_surfaces(&app, &next_snapshot)?;
+
+    Ok(next_snapshot)
+}
+
+#[tauri::command]
+pub async fn set_notifications_enabled(
+    enabled: bool,
+    app: AppHandle,
+    state: State<'_, SharedAppState>,
+) -> Result<AppSnapshot, String> {
+    let current_config = state
+        .current_config()
+        .await
+        .ok_or_else(|| "Cannot change notification settings before config is saved.".to_string())?;
+    let next_config = apply_notifications_enabled(&current_config, enabled);
+
+    state.repository.save(&next_config)?;
+
+    let next_snapshot = state
+        .update_with(|snapshot| {
+            snapshot.config = Some(next_config.clone());
+        })
+        .await;
+
+    scheduler::emit_snapshot(&app, &next_snapshot)?;
+    crate::windows::sync_resident_surfaces(&app, &next_snapshot)?;
+
+    Ok(next_snapshot)
+}
+
 fn select_group_in_config(config: &AppConfig, group_id: &str) -> Result<AppConfig, String> {
     if !config.groups.iter().any(|group| group.id == group_id) {
         return Err(format!("Unknown group id: {group_id}"));
@@ -162,12 +316,57 @@ fn derive_active_status(snapshot: &AppSnapshot) -> String {
     "idle".into()
 }
 
+async fn rollback_pending_read(
+    app: &AppHandle,
+    state: SharedAppState,
+    message: String,
+) -> Result<AppSnapshot, String> {
+    let next_snapshot = state
+        .update_with(|snapshot| {
+            snapshot.alert_runtime.resolve_pending_read(false);
+            snapshot.diagnostics.source = "request".into();
+            snapshot.diagnostics.code = Some("READ_STATUS_FAILED".into());
+            snapshot.diagnostics.message = message;
+        })
+        .await;
+
+    scheduler::emit_snapshot(app, &next_snapshot)?;
+    crate::windows::sync_resident_surfaces(app, &next_snapshot)?;
+    Err(next_snapshot.diagnostics.message.clone())
+}
+
+fn apply_notifications_enabled(config: &AppConfig, enabled: bool) -> AppConfig {
+    let mut next_config = config.clone();
+    next_config.notifications_enabled = enabled;
+    next_config
+}
+
+fn apply_alert_group_selection(config: &AppConfig, alert: &AlertPayload) -> AppConfig {
+    if !config.groups.iter().any(|group| group.id == alert.group_id) {
+        return config.clone();
+    }
+
+    let mut next_config = config.clone();
+    next_config.selected_group_id = alert.group_id.clone();
+    next_config
+}
+
+fn now() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("time drift")
+        .as_millis() as u64
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{select_group_in_config, set_polling_paused_in_snapshot};
+    use super::{
+        apply_alert_group_selection, apply_notifications_enabled, select_group_in_config,
+        set_polling_paused_in_snapshot,
+    };
     use crate::app_state::{
-        AppConfig, AppSnapshot, DashboardPreferences, DiagnosticsInfo, PollingHealth, RuntimeInfo,
-        WatchGroupConfig, WindowPolicyConfig,
+        AlertPayload, AlertRuntime, AppConfig, AppSnapshot, DashboardPreferences,
+        DiagnosticsInfo, PollingHealth, RuntimeInfo, WatchGroupConfig, WindowPolicyConfig,
     };
 
     fn test_config() -> AppConfig {
@@ -175,6 +374,7 @@ mod tests {
             api_base_url: "https://example.com".into(),
             api_key: "secret".into(),
             polling_interval_seconds: 60,
+            notifications_enabled: true,
             selected_group_id: "btc".into(),
             groups: vec![
                 WatchGroupConfig {
@@ -227,6 +427,19 @@ mod tests {
                 polling_paused: false,
                 last_active_status: None,
             },
+            alert_runtime: AlertRuntime::default(),
+        }
+    }
+
+    fn test_alert() -> AlertPayload {
+        AlertPayload {
+            id: "ETHUSDT:240:divMacd".into(),
+            group_id: "eth".into(),
+            symbol: "ETHUSDT".into(),
+            period: "240".into(),
+            signal_type: "divMacd".into(),
+            side: 1,
+            signal_at: 1_000,
         }
     }
 
@@ -280,5 +493,26 @@ mod tests {
         assert_eq!(snapshot.health.status, "backoff");
         assert_eq!(snapshot.diagnostics.next_retry_at, Some(9_000));
         assert_eq!(snapshot.diagnostics.code.as_deref(), Some("POLLING_RESUMED"));
+    }
+
+    #[test]
+    fn applies_notification_setting_without_mutating_other_fields() {
+        let config = test_config();
+
+        let next_config = apply_notifications_enabled(&config, false);
+
+        assert!(!next_config.notifications_enabled);
+        assert_eq!(next_config.selected_group_id, config.selected_group_id);
+        assert_eq!(next_config.groups.len(), config.groups.len());
+    }
+
+    #[test]
+    fn applies_alert_group_selection_when_the_group_exists() {
+        let config = test_config();
+
+        let next_config = apply_alert_group_selection(&config, &test_alert());
+
+        assert_eq!(next_config.selected_group_id, "eth");
+        assert_eq!(next_config.api_base_url, config.api_base_url);
     }
 }
