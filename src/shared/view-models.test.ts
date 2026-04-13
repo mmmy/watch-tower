@@ -3,6 +3,7 @@ import type { AppSnapshot } from "./alert-model";
 import { sanitizeConfigInput } from "./config-model";
 import {
   buildAlertPopupViewModel,
+  buildDashboardRecoveryViewModel,
   buildGroupViewModel,
   buildResidentWidgetViewModel,
   getSnapshotRuntimeStatus,
@@ -53,8 +54,8 @@ function createSnapshot(overrides?: Partial<AppSnapshot>): AppSnapshot {
       lastActiveStatus: null,
     },
     alertRuntime: {
-      activeAlert: null,
-      pendingAlerts: [],
+      visiblePopupStreams: [],
+      queuedPopupStreams: [],
       pendingRead: null,
       dashboardFocusIntent: null,
     },
@@ -155,16 +156,23 @@ describe("view-models", () => {
   it("builds an active popup view when an alert is present", () => {
     const snapshot = createSnapshot({
       alertRuntime: {
-        activeAlert: {
-          id: "BTCUSDT:60:vegas",
-          groupId: "btc-core",
-          symbol: "BTCUSDT",
-          period: "60",
-          signalType: "vegas",
-          side: 1,
-          signalAt: 1_000,
-        },
-        pendingAlerts: [],
+        visiblePopupStreams: [
+          {
+            symbol: "BTCUSDT",
+            alerts: [
+              {
+                id: "BTCUSDT:60:vegas",
+                groupId: "btc-core",
+                symbol: "BTCUSDT",
+                period: "60",
+                signalType: "vegas",
+                side: 1,
+                signalAt: 1_000,
+              },
+            ],
+          },
+        ],
+        queuedPopupStreams: [],
         pendingRead: {
           alert: {
             id: "BTCUSDT:60:vegas",
@@ -184,7 +192,112 @@ describe("view-models", () => {
     const popupView = buildAlertPopupViewModel(snapshot);
 
     expect(popupView.state).toBe("active");
+    expect(popupView.symbol).toBe("BTCUSDT");
     expect(popupView.alert?.id).toBe("BTCUSDT:60:vegas");
     expect(popupView.isPendingRead).toBe(true);
+  });
+
+  it("selects the matching popup stream by symbol and exposes stream queue metadata", () => {
+    const snapshot = createSnapshot({
+      alertRuntime: {
+        visiblePopupStreams: [
+          {
+            symbol: "BTCUSDT",
+            alerts: [
+              {
+                id: "BTCUSDT:60:vegas",
+                groupId: "btc-core",
+                symbol: "BTCUSDT",
+                period: "60",
+                signalType: "vegas",
+                side: 1,
+                signalAt: 2_000,
+              },
+            ],
+          },
+          {
+            symbol: "ETHUSDT",
+            alerts: [
+              {
+                id: "ETHUSDT:240:divMacd",
+                groupId: "eth-swing",
+                symbol: "ETHUSDT",
+                period: "240",
+                signalType: "divMacd",
+                side: -1,
+                signalAt: 1_500,
+              },
+              {
+                id: "ETHUSDT:60:vegas",
+                groupId: "eth-swing",
+                symbol: "ETHUSDT",
+                period: "60",
+                signalType: "vegas",
+                side: 1,
+                signalAt: 1_000,
+              },
+            ],
+          },
+        ],
+        queuedPopupStreams: [],
+        pendingRead: null,
+        dashboardFocusIntent: null,
+      },
+    });
+
+    const popupView = buildAlertPopupViewModel(snapshot, "ETHUSDT");
+
+    expect(popupView.symbol).toBe("ETHUSDT");
+    expect(popupView.alert?.id).toBe("ETHUSDT:240:divMacd");
+    expect(popupView.queuedCount).toBe(1);
+    expect(popupView.streamSize).toBe(2);
+  });
+
+  it("builds a recovery projection across visible and queued popup streams", () => {
+    const snapshot = createSnapshot({
+      alertRuntime: {
+        visiblePopupStreams: [
+          {
+            symbol: "BTCUSDT",
+            alerts: [
+              {
+                id: "BTCUSDT:60:vegas",
+                groupId: "btc-core",
+                symbol: "BTCUSDT",
+                period: "60",
+                signalType: "vegas",
+                side: 1,
+                signalAt: 2_000,
+              },
+            ],
+          },
+        ],
+        queuedPopupStreams: [
+          {
+            symbol: "ETHUSDT",
+            alerts: [
+              {
+                id: "ETHUSDT:240:divMacd",
+                groupId: "eth-swing",
+                symbol: "ETHUSDT",
+                period: "240",
+                signalType: "divMacd",
+                side: -1,
+                signalAt: 1_500,
+              },
+            ],
+          },
+        ],
+        pendingRead: null,
+        dashboardFocusIntent: null,
+      },
+    });
+
+    const recoveryItems = buildDashboardRecoveryViewModel(snapshot);
+
+    expect(recoveryItems).toHaveLength(2);
+    expect(recoveryItems[0]?.source).toBe("visible");
+    expect(recoveryItems[1]?.source).toBe("queued");
+    expect(recoveryItems[1]?.alert.symbol).toBe("ETHUSDT");
   });
 });

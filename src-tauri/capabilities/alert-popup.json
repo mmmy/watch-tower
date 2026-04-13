@@ -2,6 +2,6 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "alert-popup",
   "description": "Capability for the alert popup window",
-  "windows": ["alert-popup"],
+  "windows": ["alert-popup", "alert-popup:*"],
   "permissions": ["core:default"]
 }

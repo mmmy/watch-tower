@@ -74,8 +74,8 @@ function createFallbackSnapshot(): AppSnapshot {
       lastActiveStatus: null,
     },
     alertRuntime: {
-      activeAlert: null,
-      pendingAlerts: [],
+      visiblePopupStreams: [],
+      queuedPopupStreams: [],
       pendingRead: null,
       dashboardFocusIntent: null,
     },

@@ -21,14 +21,17 @@ function currentWindowLabel() {
 }
 
 function App() {
-  switch (currentWindowLabel()) {
-    case "edge-widget":
-      return <EdgeWidgetPage />;
-    case "alert-popup":
-      return <AlertPopupPage />;
-    default:
-      return <MainDashboardPage />;
+  const label = currentWindowLabel();
+
+  if (label === "edge-widget") {
+    return <EdgeWidgetPage />;
   }
+
+  if (label === "alert-popup" || label.startsWith("alert-popup:")) {
+    return <AlertPopupPage />;
+  }
+
+  return <MainDashboardPage />;
 }
 
 export default App;

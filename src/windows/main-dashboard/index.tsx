@@ -1,5 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
-import { buildGroupViewModel, getSnapshotRuntimeStatus } from "../../shared/view-models";
+import {
+  buildDashboardRecoveryViewModel,
+  buildGroupViewModel,
+  getSnapshotRuntimeStatus,
+} from "../../shared/view-models";
 import {
   createWatchGroupInput,
   toConfigInput,
@@ -14,6 +18,7 @@ import { GroupList } from "./components/group-list";
 import { LayoutPresetToggle } from "./components/layout-preset-toggle";
 import { PeriodMatrixDebug } from "./components/period-matrix-debug";
 import { PollingHealthPanel } from "./components/polling-health-panel";
+import { RecoveryPanel } from "./components/recovery-panel";
 import { Timeline60Debug } from "./components/timeline-60-debug";
 import { WindowPolicyForm } from "./components/window-policy-form";
 import { useAppEvents } from "./hooks/use-app-events";
@@ -26,6 +31,8 @@ export function MainDashboardPage() {
     saveConfig,
     pollNow,
     selectGroup,
+    markAlertRead,
+    openAlertInDashboard,
     clearDashboardFocusIntent,
   } = useAppEvents();
   const [activePeriod, setActivePeriod] = useState<string | undefined>(undefined);
@@ -61,6 +68,10 @@ export function MainDashboardPage() {
   const viewModel = useMemo(
     () => (snapshot ? buildGroupViewModel(snapshot, activePeriod, activeSignalType) : null),
     [snapshot, activePeriod, activeSignalType],
+  );
+  const recoveryItems = useMemo(
+    () => (snapshot ? buildDashboardRecoveryViewModel(snapshot) : []),
+    [snapshot],
   );
 
   const selectedDraftGroup =
@@ -305,6 +316,23 @@ export function MainDashboardPage() {
                   health={snapshot.health}
                   runtimeStatus={getSnapshotRuntimeStatus(snapshot)}
                   onPollNow={pollNow}
+                />
+                <RecoveryPanel
+                  items={recoveryItems}
+                  onOpenInDashboard={(alertId) => {
+                    const targetAlert = recoveryItems.find((item) => item.alert.id === alertId)?.alert;
+
+                    if (targetAlert) {
+                      void openAlertInDashboard(targetAlert);
+                    }
+                  }}
+                  onMarkRead={(alertId) => {
+                    const targetAlert = recoveryItems.find((item) => item.alert.id === alertId)?.alert;
+
+                    if (targetAlert) {
+                      void markAlertRead(targetAlert);
+                    }
+                  }}
                 />
                 <DiagnosticsPanel
                   diagnostics={snapshot.diagnostics}

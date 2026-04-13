@@ -58,9 +58,14 @@ export interface DashboardFocusIntent {
   requestedAt: number;
 }
 
+export interface AlertPopupStream {
+  symbol: string;
+  alerts: AlertPayload[];
+}
+
 export interface AlertRuntime {
-  activeAlert: AlertPayload | null;
-  pendingAlerts: AlertPayload[];
+  visiblePopupStreams: AlertPopupStream[];
+  queuedPopupStreams: AlertPopupStream[];
   pendingRead: PendingReadState | null;
   dashboardFocusIntent: DashboardFocusIntent | null;
 }

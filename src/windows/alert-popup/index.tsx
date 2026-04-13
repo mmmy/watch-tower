@@ -11,7 +11,10 @@ export function AlertPopupPage() {
           popupView={
             popupView ?? {
               state: "idle",
+              symbol: null,
               alert: null,
+              queuedCount: 0,
+              streamSize: 0,
               runtimeStatus: "idle",
               isPendingRead: false,
             }

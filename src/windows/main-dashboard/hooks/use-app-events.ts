@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import type { AppSnapshot } from "../../../shared/alert-model";
+import type { AlertPayload, AppSnapshot } from "../../../shared/alert-model";
 import {
   sanitizeConfigInput,
   type AppConfig,
@@ -120,8 +120,8 @@ function createFallbackSnapshot(configOverride?: AppConfig): AppSnapshot {
       lastActiveStatus: null,
     },
     alertRuntime: {
-      activeAlert: null,
-      pendingAlerts: [],
+      visiblePopupStreams: [],
+      queuedPopupStreams: [],
       pendingRead: null,
       dashboardFocusIntent: null,
     },
@@ -249,6 +249,106 @@ export function useAppEvents() {
     setSnapshot(nextSnapshot);
   }, []);
 
+  const markAlertRead = useCallback(async (alert: AlertPayload) => {
+    if (!isTauriRuntime()) {
+      setSnapshot((currentSnapshot) =>
+        currentSnapshot
+          ? {
+              ...currentSnapshot,
+              alertRuntime: {
+                ...currentSnapshot.alertRuntime,
+                pendingRead: {
+                  alert,
+                  requestedAt: Date.now(),
+                },
+                visiblePopupStreams: currentSnapshot.alertRuntime.visiblePopupStreams
+                  .map((stream) =>
+                    stream.symbol.toUpperCase() === alert.symbol.toUpperCase()
+                      ? {
+                          ...stream,
+                          alerts: stream.alerts.filter(
+                            (candidate) => candidate.id !== alert.id,
+                          ),
+                        }
+                      : stream,
+                  )
+                  .filter((stream) => stream.alerts.length > 0),
+                queuedPopupStreams: currentSnapshot.alertRuntime.queuedPopupStreams
+                  .map((stream) =>
+                    stream.symbol.toUpperCase() === alert.symbol.toUpperCase()
+                      ? {
+                          ...stream,
+                          alerts: stream.alerts.filter(
+                            (candidate) => candidate.id !== alert.id,
+                          ),
+                        }
+                      : stream,
+                  )
+                  .filter((stream) => stream.alerts.length > 0),
+              },
+            }
+          : currentSnapshot,
+      );
+      return;
+    }
+
+    const nextSnapshot = await invoke<AppSnapshot>("mark_alert_read", { alert });
+    setSnapshot(nextSnapshot);
+  }, []);
+
+  const openAlertInDashboard = useCallback(async (alert: AlertPayload) => {
+    if (!isTauriRuntime()) {
+      setSnapshot((currentSnapshot) =>
+        currentSnapshot
+          ? {
+              ...currentSnapshot,
+              config: currentSnapshot.config
+                ? {
+                    ...currentSnapshot.config,
+                    selectedGroupId: alert.groupId,
+                  }
+                : currentSnapshot.config,
+              alertRuntime: {
+                ...currentSnapshot.alertRuntime,
+                dashboardFocusIntent: {
+                  alert,
+                  requestedAt: Date.now(),
+                },
+                visiblePopupStreams: currentSnapshot.alertRuntime.visiblePopupStreams
+                  .map((stream) =>
+                    stream.symbol.toUpperCase() === alert.symbol.toUpperCase()
+                      ? {
+                          ...stream,
+                          alerts: stream.alerts.filter(
+                            (candidate) => candidate.id !== alert.id,
+                          ),
+                        }
+                      : stream,
+                  )
+                  .filter((stream) => stream.alerts.length > 0),
+                queuedPopupStreams: currentSnapshot.alertRuntime.queuedPopupStreams
+                  .map((stream) =>
+                    stream.symbol.toUpperCase() === alert.symbol.toUpperCase()
+                      ? {
+                          ...stream,
+                          alerts: stream.alerts.filter(
+                            (candidate) => candidate.id !== alert.id,
+                          ),
+                        }
+                      : stream,
+                  )
+                  .filter((stream) => stream.alerts.length > 0),
+              },
+            }
+          : currentSnapshot,
+      );
+      return;
+    }
+
+    const nextSnapshot = await invoke<AppSnapshot>("open_alert_in_dashboard", { alert });
+    setSnapshot(nextSnapshot);
+  }, []);
+
   return useMemo(
     () => ({
       snapshot,
@@ -257,8 +357,20 @@ export function useAppEvents() {
       saveConfig,
       pollNow,
       selectGroup,
+      markAlertRead,
+      openAlertInDashboard,
       clearDashboardFocusIntent,
     }),
-    [snapshot, isSaving, submitError, saveConfig, pollNow, selectGroup, clearDashboardFocusIntent],
+    [
+      snapshot,
+      isSaving,
+      submitError,
+      saveConfig,
+      pollNow,
+      selectGroup,
+      markAlertRead,
+      openAlertInDashboard,
+      clearDashboardFocusIntent,
+    ],
   );
 }

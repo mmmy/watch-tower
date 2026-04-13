@@ -10,6 +10,28 @@ function isTauriRuntime() {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 }
 
+function currentPopupSymbol() {
+  if (typeof window === "undefined") {
+    return "ETHUSDT";
+  }
+
+  const label = (window as typeof window & {
+    __TAURI_INTERNALS__?: {
+      metadata?: {
+        currentWindow?: {
+          label?: string;
+        };
+      };
+    };
+  }).__TAURI_INTERNALS__?.metadata?.currentWindow?.label;
+
+  if (typeof label === "string" && label.startsWith("alert-popup:")) {
+    return label.slice("alert-popup:".length);
+  }
+
+  return "ETHUSDT";
+}
+
 function createFallbackSnapshot(): AppSnapshot {
   const now = Date.now();
   const activeAlert: AlertPayload = {
@@ -43,6 +65,12 @@ function createFallbackSnapshot(): AppSnapshot {
           signalTypesText: "vegas,divMacd",
           selectedTimelinePeriod: "240",
         },
+        {
+          id: "sol-scalp",
+          symbol: "SOLUSDT",
+          signalTypesText: "vegas",
+          selectedTimelinePeriod: "15",
+        },
       ],
     }),
     rawResponse: null,
@@ -64,16 +92,40 @@ function createFallbackSnapshot(): AppSnapshot {
       lastActiveStatus: null,
     },
     alertRuntime: {
-      activeAlert,
-      pendingAlerts: [
+      visiblePopupStreams: [
         {
-          id: "BTCUSDT:60:vegas",
-          groupId: "btc-core",
+          symbol: "ETHUSDT",
+          alerts: [activeAlert],
+        },
+      ],
+      queuedPopupStreams: [
+        {
           symbol: "BTCUSDT",
-          period: "60",
-          signalType: "vegas",
-          side: -1,
-          signalAt: now - 60 * 60 * 1000,
+          alerts: [
+            {
+              id: "BTCUSDT:60:vegas",
+              groupId: "btc-core",
+              symbol: "BTCUSDT",
+              period: "60",
+              signalType: "vegas",
+              side: -1,
+              signalAt: now - 60 * 60 * 1000,
+            },
+          ],
+        },
+        {
+          symbol: "SOLUSDT",
+          alerts: [
+            {
+              id: "SOLUSDT:15:vegas",
+              groupId: "sol-scalp",
+              symbol: "SOLUSDT",
+              period: "15",
+              signalType: "vegas",
+              side: 1,
+              signalAt: now - 15 * 60 * 1000,
+            },
+          ],
         },
       ],
       pendingRead: null,
@@ -95,6 +147,7 @@ function createFallbackSnapshot(): AppSnapshot {
 export function useAlertPopupEvents() {
   const [snapshot, setSnapshot] = useState<AppSnapshot | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const popupSymbol = currentPopupSymbol();
 
   useEffect(() => {
     if (!isTauriRuntime()) {
@@ -172,7 +225,30 @@ export function useAlertPopupEvents() {
                   alert,
                   requestedAt: Date.now(),
                 },
-                activeAlert: null,
+                visiblePopupStreams: currentSnapshot.alertRuntime.visiblePopupStreams
+                  .map((stream) =>
+                    stream.symbol.toUpperCase() === alert.symbol.toUpperCase()
+                      ? {
+                          ...stream,
+                          alerts: stream.alerts.filter(
+                            (candidate) => candidate.id !== alert.id,
+                          ),
+                        }
+                      : stream,
+                  )
+                  .filter((stream) => stream.alerts.length > 0),
+                queuedPopupStreams: currentSnapshot.alertRuntime.queuedPopupStreams
+                  .map((stream) =>
+                    stream.symbol.toUpperCase() === alert.symbol.toUpperCase()
+                      ? {
+                          ...stream,
+                          alerts: stream.alerts.filter(
+                            (candidate) => candidate.id !== alert.id,
+                          ),
+                        }
+                      : stream,
+                  )
+                  .filter((stream) => stream.alerts.length > 0),
               },
             }
           : currentSnapshot,
@@ -189,8 +265,8 @@ export function useAlertPopupEvents() {
   }, []);
 
   const popupView = useMemo(
-    () => (snapshot ? buildAlertPopupViewModel(snapshot) : null),
-    [snapshot],
+    () => (snapshot ? buildAlertPopupViewModel(snapshot, popupSymbol) : null),
+    [popupSymbol, snapshot],
   );
 
   return useMemo(

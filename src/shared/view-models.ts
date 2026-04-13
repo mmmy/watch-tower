@@ -1,5 +1,6 @@
 import type {
   AlertPayload,
+  AlertPopupStream,
   AppSnapshot,
   DashboardFocusIntent,
   NormalizedGroupSnapshot,
@@ -26,8 +27,17 @@ export interface ResidentWidgetViewModel {
 
 export interface AlertPopupViewModel {
   state: "idle" | "active";
+  symbol: string | null;
   alert: AlertPayload | null;
+  queuedCount: number;
+  streamSize: number;
   runtimeStatus: PollingStatus;
+  isPendingRead: boolean;
+}
+
+export interface DashboardRecoveryItemViewModel {
+  alert: AlertPayload;
+  source: "visible" | "queued";
   isPendingRead: boolean;
 }
 
@@ -106,20 +116,66 @@ export function buildResidentWidgetViewModel(
   };
 }
 
-export function buildAlertPopupViewModel(snapshot: AppSnapshot): AlertPopupViewModel {
-  const activeAlert = snapshot.alertRuntime.activeAlert;
+export function buildAlertPopupViewModel(
+  snapshot: AppSnapshot,
+  symbol?: string,
+): AlertPopupViewModel {
+  const stream = resolvePopupStream(snapshot.alertRuntime.visiblePopupStreams, snapshot.alertRuntime.queuedPopupStreams, symbol);
+  const activeAlert = stream?.alerts[0] ?? null;
   const pendingAlertId = snapshot.alertRuntime.pendingRead?.alert.id;
 
   return {
     state: activeAlert ? "active" : "idle",
+    symbol: stream?.symbol ?? null,
     alert: activeAlert,
+    queuedCount: Math.max((stream?.alerts.length ?? 0) - 1, 0),
+    streamSize: stream?.alerts.length ?? 0,
     runtimeStatus: getSnapshotRuntimeStatus(snapshot),
     isPendingRead: Boolean(activeAlert && pendingAlertId === activeAlert.id),
   };
+}
+
+export function buildDashboardRecoveryViewModel(
+  snapshot: AppSnapshot,
+): DashboardRecoveryItemViewModel[] {
+  const pendingAlertId = snapshot.alertRuntime.pendingRead?.alert.id;
+
+  return [
+    ...snapshot.alertRuntime.visiblePopupStreams.flatMap((stream) =>
+      stream.alerts.map((alert) => ({
+        alert,
+        source: "visible" as const,
+        isPendingRead: pendingAlertId === alert.id,
+      })),
+    ),
+    ...snapshot.alertRuntime.queuedPopupStreams.flatMap((stream) =>
+      stream.alerts.map((alert) => ({
+        alert,
+        source: "queued" as const,
+        isPendingRead: pendingAlertId === alert.id,
+      })),
+    ),
+  ];
 }
 
 export function getDashboardFocusIntent(
   snapshot: AppSnapshot,
 ): DashboardFocusIntent | null {
   return snapshot.alertRuntime.dashboardFocusIntent;
+}
+
+function resolvePopupStream(
+  visibleStreams: AlertPopupStream[],
+  queuedStreams: AlertPopupStream[],
+  symbol?: string,
+): AlertPopupStream | null {
+  if (symbol) {
+    return (
+      visibleStreams.find((stream) => stream.symbol.toUpperCase() === symbol.toUpperCase()) ??
+      queuedStreams.find((stream) => stream.symbol.toUpperCase() === symbol.toUpperCase()) ??
+      null
+    );
+  }
+
+  return visibleStreams[0] ?? queuedStreams[0] ?? null;
 }

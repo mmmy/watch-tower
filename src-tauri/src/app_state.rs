@@ -90,11 +90,18 @@ pub struct DashboardFocusIntent {
     pub requested_at: u64,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct AlertPopupStream {
+    pub symbol: String,
+    pub alerts: Vec<AlertPayload>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct AlertRuntime {
-    pub active_alert: Option<AlertPayload>,
-    pub pending_alerts: Vec<AlertPayload>,
+    pub visible_popup_streams: Vec<AlertPopupStream>,
+    pub queued_popup_streams: Vec<AlertPopupStream>,
     pub pending_read: Option<PendingReadState>,
     pub dashboard_focus_intent: Option<DashboardFocusIntent>,
 }
@@ -271,18 +278,18 @@ impl Default for WidgetBehaviorRuntime {
 }
 
 impl AlertRuntime {
+    pub const MAX_VISIBLE_POPUP_STREAMS: usize = 3;
+
     pub fn contains_alert_id(&self, alert_id: &str) -> bool {
-        self.active_alert
+        self.visible_popup_streams
+            .iter()
+            .chain(self.queued_popup_streams.iter())
+            .flat_map(|stream| stream.alerts.iter())
+            .any(|alert| alert.id == alert_id)
+            || self
+            .pending_read
             .as_ref()
-            .is_some_and(|alert| alert.id == alert_id)
-            || self
-                .pending_alerts
-                .iter()
-                .any(|alert| alert.id == alert_id)
-            || self
-                .pending_read
-                .as_ref()
-                .is_some_and(|pending| pending.alert.id == alert_id)
+            .is_some_and(|pending| pending.alert.id == alert_id)
     }
 
     pub fn enqueue_new_alerts(&mut self, alerts: Vec<AlertPayload>) {
@@ -291,13 +298,10 @@ impl AlertRuntime {
                 continue;
             }
 
-            if self.active_alert.is_none() {
-                self.active_alert = Some(alert);
-                continue;
-            }
-
-            self.pending_alerts.push(alert);
+            self.upsert_alert(alert);
         }
+
+        self.repartition_streams();
     }
 
     pub fn suppressed_alert_ids(&self) -> Vec<String> {
@@ -323,30 +327,32 @@ impl AlertRuntime {
             return;
         }
 
-        let pending_alert_id = pending_read.alert.id;
-
-        if self
-            .active_alert
-            .as_ref()
-            .is_some_and(|alert| alert.id == pending_alert_id)
-        {
-            self.active_alert = None;
-        } else {
-            self.pending_alerts
-                .retain(|alert| alert.id != pending_alert_id);
-        }
-
-        self.promote_next_alert();
+        self.remove_alert(&pending_read.alert.id);
     }
 
-    pub fn promote_next_alert(&mut self) {
-        if self.active_alert.is_some() || self.pending_read.is_some() || self.pending_alerts.is_empty() {
-            return;
+    pub fn remove_alert(&mut self, alert_id: &str) -> bool {
+        let mut removed = false;
+
+        self.visible_popup_streams.retain_mut(|stream| {
+            let original_len = stream.alerts.len();
+            stream.alerts.retain(|alert| alert.id != alert_id);
+            removed |= original_len != stream.alerts.len();
+            !stream.alerts.is_empty()
+        });
+
+        self.queued_popup_streams.retain_mut(|stream| {
+            let original_len = stream.alerts.len();
+            stream.alerts.retain(|alert| alert.id != alert_id);
+            removed |= original_len != stream.alerts.len();
+            !stream.alerts.is_empty()
+        });
+
+        if removed {
+            self.repartition_streams();
         }
 
-        self.active_alert = Some(self.pending_alerts.remove(0));
+        removed
     }
-
     pub fn set_dashboard_focus_intent(&mut self, alert: AlertPayload, requested_at: u64) {
         self.dashboard_focus_intent = Some(DashboardFocusIntent {
             alert,
@@ -357,6 +363,83 @@ impl AlertRuntime {
     pub fn clear_dashboard_focus_intent(&mut self) {
         self.dashboard_focus_intent = None;
     }
+
+    fn upsert_alert(&mut self, alert: AlertPayload) {
+        if let Some(stream) = self
+            .visible_popup_streams
+            .iter_mut()
+            .find(|stream| stream.symbol.eq_ignore_ascii_case(&alert.symbol))
+        {
+            stream.alerts.push(alert);
+            sort_stream_alerts(stream);
+            return;
+        }
+
+        if let Some(stream) = self
+            .queued_popup_streams
+            .iter_mut()
+            .find(|stream| stream.symbol.eq_ignore_ascii_case(&alert.symbol))
+        {
+            stream.alerts.push(alert);
+            sort_stream_alerts(stream);
+            return;
+        }
+
+        let mut stream = AlertPopupStream {
+            symbol: alert.symbol.clone(),
+            alerts: vec![alert],
+        };
+        sort_stream_alerts(&mut stream);
+
+        if self.visible_popup_streams.len() < Self::MAX_VISIBLE_POPUP_STREAMS {
+            self.visible_popup_streams.push(stream);
+        } else {
+            self.queued_popup_streams.push(stream);
+        }
+    }
+
+    fn repartition_streams(&mut self) {
+        let mut streams = self
+            .visible_popup_streams
+            .drain(..)
+            .chain(self.queued_popup_streams.drain(..))
+            .collect::<Vec<_>>();
+
+        for stream in &mut streams {
+            sort_stream_alerts(stream);
+        }
+
+        streams.sort_by(compare_stream_priority);
+
+        let split_index = streams.len().min(Self::MAX_VISIBLE_POPUP_STREAMS);
+        self.visible_popup_streams = streams.drain(..split_index).collect();
+        self.queued_popup_streams = streams;
+    }
+}
+
+fn sort_stream_alerts(stream: &mut AlertPopupStream) {
+    stream.alerts.sort_by(|left, right| {
+        right
+            .signal_at
+            .cmp(&left.signal_at)
+            .then_with(|| left.period.cmp(&right.period))
+            .then_with(|| left.signal_type.cmp(&right.signal_type))
+            .then_with(|| left.id.cmp(&right.id))
+    });
+}
+
+fn compare_stream_priority(left: &AlertPopupStream, right: &AlertPopupStream) -> std::cmp::Ordering {
+    latest_signal_at(right)
+        .cmp(&latest_signal_at(left))
+        .then_with(|| left.symbol.cmp(&right.symbol))
+}
+
+fn latest_signal_at(stream: &AlertPopupStream) -> u64 {
+    stream
+        .alerts
+        .first()
+        .map(|alert| alert.signal_at)
+        .unwrap_or_default()
 }
 
 fn default_dashboard_preferences() -> DashboardPreferences {
@@ -377,4 +460,74 @@ fn default_window_policy() -> WindowPolicyConfig {
 
 fn default_notifications_enabled() -> bool {
     true
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{AlertPayload, AlertRuntime};
+
+    fn alert(symbol: &str, period: &str, signal_type: &str, signal_at: u64) -> AlertPayload {
+        AlertPayload {
+            id: format!("{symbol}:{period}:{signal_type}"),
+            group_id: format!("{}-group", symbol.to_lowercase()),
+            symbol: symbol.into(),
+            period: period.into(),
+            signal_type: signal_type.into(),
+            side: 1,
+            signal_at,
+        }
+    }
+
+    #[test]
+    fn reuses_the_same_visible_stream_for_same_symbol_alerts() {
+        let mut runtime = AlertRuntime::default();
+
+        runtime.enqueue_new_alerts(vec![
+            alert("BTCUSDT", "60", "vegas", 1_000),
+            alert("BTCUSDT", "240", "divMacd", 2_000),
+        ]);
+
+        assert_eq!(runtime.visible_popup_streams.len(), 1);
+        assert_eq!(runtime.visible_popup_streams[0].symbol, "BTCUSDT");
+        assert_eq!(runtime.visible_popup_streams[0].alerts.len(), 2);
+        assert_eq!(runtime.visible_popup_streams[0].alerts[0].period, "240");
+    }
+
+    #[test]
+    fn queues_lower_priority_streams_after_visible_capacity_is_reached() {
+        let mut runtime = AlertRuntime::default();
+
+        runtime.enqueue_new_alerts(vec![
+            alert("BTCUSDT", "60", "vegas", 4_000),
+            alert("ETHUSDT", "60", "vegas", 3_000),
+            alert("SOLUSDT", "60", "vegas", 2_000),
+            alert("XRPUSDT", "60", "vegas", 1_000),
+        ]);
+
+        assert_eq!(runtime.visible_popup_streams.len(), 3);
+        assert_eq!(runtime.queued_popup_streams.len(), 1);
+        assert_eq!(runtime.queued_popup_streams[0].symbol, "XRPUSDT");
+    }
+
+    #[test]
+    fn removing_a_visible_alert_promotes_the_next_queued_stream() {
+        let mut runtime = AlertRuntime::default();
+
+        runtime.enqueue_new_alerts(vec![
+            alert("BTCUSDT", "60", "vegas", 4_000),
+            alert("ETHUSDT", "60", "vegas", 3_000),
+            alert("SOLUSDT", "60", "vegas", 2_000),
+            alert("XRPUSDT", "60", "vegas", 1_000),
+        ]);
+
+        let removed = runtime.remove_alert("SOLUSDT:60:vegas");
+
+        assert!(removed);
+        assert_eq!(runtime.visible_popup_streams.len(), 3);
+        assert!(runtime
+            .visible_popup_streams
+            .iter()
+            .any(|stream| stream.symbol == "XRPUSDT"));
+        assert!(runtime.queued_popup_streams.is_empty());
+    }
 }

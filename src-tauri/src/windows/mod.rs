@@ -2,6 +2,7 @@ pub mod alert_popup;
 pub mod edge_widget;
 pub mod hover_state;
 pub mod positioning;
+pub mod queue;
 
 use crate::app_state::AppSnapshot;
 use tauri::{Manager, WindowEvent};

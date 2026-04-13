@@ -176,16 +176,7 @@ pub async fn open_alert_in_dashboard(
             snapshot
                 .alert_runtime
                 .set_dashboard_focus_intent(alert.clone(), requested_at);
-
-            if snapshot
-                .alert_runtime
-                .active_alert
-                .as_ref()
-                .is_some_and(|active_alert| active_alert.id == alert.id)
-            {
-                snapshot.alert_runtime.active_alert = None;
-                snapshot.alert_runtime.promote_next_alert();
-            }
+            snapshot.alert_runtime.remove_alert(&alert.id);
         })
         .await;
 

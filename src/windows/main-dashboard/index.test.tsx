@@ -53,8 +53,8 @@ describe("MainDashboardPage", () => {
           lastActiveStatus: null,
         },
         alertRuntime: {
-          activeAlert: null,
-          pendingAlerts: [],
+          visiblePopupStreams: [],
+          queuedPopupStreams: [],
           pendingRead: null,
           dashboardFocusIntent: null,
         },
@@ -74,6 +74,8 @@ describe("MainDashboardPage", () => {
       saveConfig: vi.fn(),
       pollNow: vi.fn(),
       selectGroup: vi.fn(),
+      markAlertRead: vi.fn(),
+      openAlertInDashboard: vi.fn(),
       clearDashboardFocusIntent: vi.fn(),
     });
 
@@ -82,6 +84,7 @@ describe("MainDashboardPage", () => {
     expect(screen.getByText("Watch groups")).toBeInTheDocument();
     expect(screen.getByText("Current group detail")).toBeInTheDocument();
     expect(screen.getByText("Layout & window policy")).toBeInTheDocument();
+    expect(screen.getByText("Unread recovery")).toBeInTheDocument();
   });
 
   it("shows an empty-state detail panel when config has no groups", () => {
@@ -115,8 +118,8 @@ describe("MainDashboardPage", () => {
           lastActiveStatus: null,
         },
         alertRuntime: {
-          activeAlert: null,
-          pendingAlerts: [],
+          visiblePopupStreams: [],
+          queuedPopupStreams: [],
           pendingRead: null,
           dashboardFocusIntent: null,
         },
@@ -136,6 +139,8 @@ describe("MainDashboardPage", () => {
       saveConfig: vi.fn(),
       pollNow: vi.fn(),
       selectGroup: vi.fn(),
+      markAlertRead: vi.fn(),
+      openAlertInDashboard: vi.fn(),
       clearDashboardFocusIntent: vi.fn(),
     });
 

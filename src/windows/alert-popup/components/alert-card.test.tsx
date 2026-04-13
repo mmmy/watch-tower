@@ -6,6 +6,7 @@ import { AlertCard } from "./alert-card";
 function activePopupView(overrides?: Partial<AlertPopupViewModel>): AlertPopupViewModel {
   return {
     state: "active",
+    symbol: "BTCUSDT",
     alert: {
       id: "BTCUSDT:60:vegas",
       groupId: "btc-core",
@@ -15,6 +16,8 @@ function activePopupView(overrides?: Partial<AlertPopupViewModel>): AlertPopupVi
       side: 1,
       signalAt: 1_000,
     },
+    queuedCount: 0,
+    streamSize: 1,
     runtimeStatus: "success",
     isPendingRead: false,
     ...overrides,
