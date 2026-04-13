@@ -1,12 +1,15 @@
 use crate::app_state::WindowPolicyConfig;
+use crate::windows::hover_state::WIDGET_WAKE_ZONE_WIDTH_PX;
 use tauri::Monitor;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WidgetPlacement {
-    pub x: i32,
+    pub visible_x: i32,
+    pub hidden_x: i32,
     pub y: i32,
     pub width: u32,
     pub height: u32,
+    pub wake_zone_width: u32,
 }
 
 pub fn compute_widget_placement(
@@ -40,12 +43,24 @@ fn compute_widget_placement_from_work_area(
     let desired_y = origin_y + policy.top_offset as i32;
     let y = desired_y.clamp(origin_y, max_y);
 
-    let x = match policy.dock_side.as_str() {
+    let wake_zone_width = WIDGET_WAKE_ZONE_WIDTH_PX.min(width);
+    let visible_x = match policy.dock_side.as_str() {
         "left" => origin_x,
         _ => origin_x + available_width as i32 - width as i32,
     };
+    let hidden_x = match policy.dock_side.as_str() {
+        "left" => origin_x - (width as i32 - wake_zone_width as i32),
+        _ => origin_x + available_width as i32 - wake_zone_width as i32,
+    };
 
-    WidgetPlacement { x, y, width, height }
+    WidgetPlacement {
+        visible_x,
+        hidden_x,
+        y,
+        width,
+        height,
+        wake_zone_width,
+    }
 }
 
 #[cfg(test)]
@@ -64,10 +79,12 @@ mod tests {
 
         let placement = compute_widget_placement_from_work_area(0, 0, 1920, 1080, &policy);
 
-        assert_eq!(placement.x, 1640);
+        assert_eq!(placement.visible_x, 1640);
+        assert_eq!(placement.hidden_x, 1906);
         assert_eq!(placement.y, 96);
         assert_eq!(placement.width, 280);
         assert_eq!(placement.height, 720);
+        assert_eq!(placement.wake_zone_width, 14);
     }
 
     #[test]
@@ -81,7 +98,8 @@ mod tests {
 
         let placement = compute_widget_placement_from_work_area(100, 40, 320, 400, &policy);
 
-        assert_eq!(placement.x, 100);
+        assert_eq!(placement.visible_x, 100);
+        assert_eq!(placement.hidden_x, -206);
         assert_eq!(placement.y, 40);
         assert_eq!(placement.width, 320);
         assert_eq!(placement.height, 400);

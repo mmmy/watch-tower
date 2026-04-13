@@ -8,6 +8,9 @@ describe("StatusFooter", () => {
       <StatusFooter
         runtimeStatus="paused"
         isStale
+        widgetMode="passive"
+        widgetPlacement="hidden"
+        widgetFallback="Passive click-through is not enabled on this platform build."
         diagnostics={{
           source: "system",
           code: "POLLING_PAUSED",
@@ -22,5 +25,8 @@ describe("StatusFooter", () => {
     expect(screen.getByText("paused")).toBeInTheDocument();
     expect(screen.getByText("stale snapshot")).toBeInTheDocument();
     expect(screen.getByText("POLLING_PAUSED")).toBeInTheDocument();
+    expect(screen.getByText("passive")).toBeInTheDocument();
+    expect(screen.getByText("hidden")).toBeInTheDocument();
+    expect(screen.getByText(/Passive click-through/)).toBeInTheDocument();
   });
 });

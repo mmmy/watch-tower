@@ -2,6 +2,7 @@ use crate::app_state::{
     AppSnapshot, DiagnosticsInfo, PollingHealth, SharedAppState, SnapshotEventPayload,
     APP_SNAPSHOT_EVENT,
 };
+use crate::windows::hover_state::{apply_widget_intent, spawn_idle_timeout, WidgetIntent};
 use crate::polling::alerts_client::{self, FetchError};
 use crate::polling::backoff::{clamp_polling_interval, compute_backoff_until, sleep_duration_ms};
 use crate::polling::unread_diff::compute_new_unread_alerts;
@@ -110,6 +111,7 @@ pub async fn poll_once(app: &AppHandle, state: SharedAppState) -> Result<AppSnap
     let snapshot_before_fetch = state.current_snapshot().await;
     let runtime = snapshot_before_fetch.runtime.clone();
     let mut alert_runtime = snapshot_before_fetch.alert_runtime.clone();
+    let mut widget_runtime = snapshot_before_fetch.widget_runtime.clone();
     let next_snapshot = match alerts_client::fetch_signals(&state.http_client, &config).await {
         Ok(response) => {
             let suppressed_alert_ids = HashSet::from_iter(alert_runtime.suppressed_alert_ids());
@@ -121,6 +123,9 @@ pub async fn poll_once(app: &AppHandle, state: SharedAppState) -> Result<AppSnap
             );
             if config.notifications_enabled {
                 send_system_notifications(app, &new_alerts);
+            }
+            if !new_alerts.is_empty() {
+                let _ = apply_widget_intent(&mut widget_runtime, WidgetIntent::AlertWake, attempt_started_at);
             }
             alert_runtime.enqueue_new_alerts(new_alerts);
 
@@ -145,6 +150,7 @@ pub async fn poll_once(app: &AppHandle, state: SharedAppState) -> Result<AppSnap
                 },
                 runtime,
                 alert_runtime,
+                widget_runtime,
             }
         }
         Err(FetchError::Unauthorized) => {
@@ -241,6 +247,14 @@ pub async fn poll_once(app: &AppHandle, state: SharedAppState) -> Result<AppSnap
     state.replace_snapshot(next_snapshot.clone()).await;
     emit_snapshot(app, &next_snapshot)?;
     crate::windows::sync_resident_surfaces(app, &next_snapshot)?;
+    if let Some(deadline_at) = next_snapshot.widget_runtime.idle_deadline_at {
+        spawn_idle_timeout(
+            app.clone(),
+            state.clone(),
+            next_snapshot.widget_runtime.interaction_session_id,
+            deadline_at,
+        );
+    }
 
     Ok(next_snapshot)
 }
@@ -304,6 +318,7 @@ fn build_empty_groups_snapshot(
         },
         runtime: current_snapshot.runtime.clone(),
         alert_runtime: current_snapshot.alert_runtime.clone(),
+        widget_runtime: current_snapshot.widget_runtime.clone(),
     }
 }
 
@@ -316,7 +331,7 @@ mod tests {
     use super::{build_empty_groups_snapshot, should_skip_poll_for_runtime_state, sleep_duration_ms};
     use crate::app_state::{
         AlertRuntime, AppConfig, AppSnapshot, DashboardPreferences, DiagnosticsInfo,
-        PollingHealth, RuntimeInfo, WindowPolicyConfig,
+        PollingHealth, RuntimeInfo, WidgetBehaviorRuntime, WindowPolicyConfig,
     };
 
     #[test]
@@ -348,6 +363,7 @@ mod tests {
                 last_active_status: None,
             },
             alert_runtime: AlertRuntime::default(),
+            widget_runtime: WidgetBehaviorRuntime::default(),
         };
         let config = AppConfig {
             api_base_url: "https://example.com".into(),
@@ -403,6 +419,7 @@ mod tests {
                 last_active_status: Some("success".into()),
             },
             alert_runtime: AlertRuntime::default(),
+            widget_runtime: WidgetBehaviorRuntime::default(),
         };
 
         assert!(should_skip_poll_for_runtime_state(&snapshot));

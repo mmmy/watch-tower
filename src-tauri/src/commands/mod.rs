@@ -1,6 +1,7 @@
 use crate::app_state::{AlertPayload, AppConfig, AppSnapshot, SharedAppState};
 use crate::polling::alerts_client::{self, ReadStatusInput};
 use crate::polling::scheduler;
+use crate::windows::hover_state::{apply_widget_intent, spawn_idle_timeout, WidgetIntent};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, State};
 
@@ -238,6 +239,30 @@ pub async fn set_notifications_enabled(
     Ok(next_snapshot)
 }
 
+#[tauri::command]
+pub async fn widget_pointer_enter(
+    app: AppHandle,
+    state: State<'_, SharedAppState>,
+) -> Result<AppSnapshot, String> {
+    update_widget_runtime(&app, state.inner().clone(), WidgetIntent::PointerEnter).await
+}
+
+#[tauri::command]
+pub async fn widget_pointer_leave(
+    app: AppHandle,
+    state: State<'_, SharedAppState>,
+) -> Result<AppSnapshot, String> {
+    update_widget_runtime(&app, state.inner().clone(), WidgetIntent::PointerLeave).await
+}
+
+#[tauri::command]
+pub async fn widget_interaction_ping(
+    app: AppHandle,
+    state: State<'_, SharedAppState>,
+) -> Result<AppSnapshot, String> {
+    update_widget_runtime(&app, state.inner().clone(), WidgetIntent::InteractionStart).await
+}
+
 fn select_group_in_config(config: &AppConfig, group_id: &str) -> Result<AppConfig, String> {
     if !config.groups.iter().any(|group| group.id == group_id) {
         return Err(format!("Unknown group id: {group_id}"));
@@ -351,6 +376,32 @@ fn apply_alert_group_selection(config: &AppConfig, alert: &AlertPayload) -> AppC
     next_config
 }
 
+pub(crate) async fn update_widget_runtime(
+    app: &AppHandle,
+    state: SharedAppState,
+    intent: WidgetIntent,
+) -> Result<AppSnapshot, String> {
+    let timestamp = now();
+    let next_snapshot = state
+        .update_with(|snapshot| {
+            let _ = apply_widget_intent(&mut snapshot.widget_runtime, intent, timestamp);
+        })
+        .await;
+
+    scheduler::emit_snapshot(app, &next_snapshot)?;
+    crate::windows::sync_resident_surfaces(app, &next_snapshot)?;
+    if let Some(deadline_at) = next_snapshot.widget_runtime.idle_deadline_at {
+        spawn_idle_timeout(
+            app.clone(),
+            state,
+            next_snapshot.widget_runtime.interaction_session_id,
+            deadline_at,
+        );
+    }
+
+    Ok(next_snapshot)
+}
+
 fn now() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -366,8 +417,10 @@ mod tests {
     };
     use crate::app_state::{
         AlertPayload, AlertRuntime, AppConfig, AppSnapshot, DashboardPreferences,
-        DiagnosticsInfo, PollingHealth, RuntimeInfo, WatchGroupConfig, WindowPolicyConfig,
+        DiagnosticsInfo, PollingHealth, RuntimeInfo, WatchGroupConfig, WidgetBehaviorRuntime,
+        WindowPolicyConfig,
     };
+    use crate::windows::hover_state::{apply_widget_intent, WidgetIntent};
 
     fn test_config() -> AppConfig {
         AppConfig {
@@ -428,6 +481,7 @@ mod tests {
                 last_active_status: None,
             },
             alert_runtime: AlertRuntime::default(),
+            widget_runtime: WidgetBehaviorRuntime::default(),
         }
     }
 
@@ -514,5 +568,21 @@ mod tests {
 
         assert_eq!(next_config.selected_group_id, "eth");
         assert_eq!(next_config.api_base_url, config.api_base_url);
+    }
+
+    #[test]
+    fn widget_interaction_promotes_runtime_to_interactive() {
+        let mut snapshot = test_snapshot();
+
+        let changed = apply_widget_intent(
+            &mut snapshot.widget_runtime,
+            WidgetIntent::InteractionStart,
+            1_000,
+        );
+
+        assert!(changed);
+        assert_eq!(snapshot.widget_runtime.mode, "interactive");
+        assert_eq!(snapshot.widget_runtime.placement, "visible");
+        assert!(snapshot.widget_runtime.idle_deadline_at.is_some());
     }
 }

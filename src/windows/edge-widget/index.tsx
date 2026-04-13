@@ -4,11 +4,35 @@ import { StatusFooter } from "./components/status-footer";
 import { useEdgeWidgetEvents } from "./hooks/use-edge-widget-events";
 
 export function EdgeWidgetPage() {
-  const { snapshot, widgetView } = useEdgeWidgetEvents();
+  const {
+    snapshot,
+    widgetView,
+    notifyPointerEnter,
+    notifyPointerLeave,
+    notifyInteraction,
+  } = useEdgeWidgetEvents();
 
   return (
     <main className="edge-widget-shell">
-      <section className="edge-widget">
+      <section
+        className="edge-widget"
+        data-widget-mode={widgetView?.widgetRuntime.mode ?? snapshot?.widgetRuntime.mode ?? "loading"}
+        data-widget-placement={
+          widgetView?.widgetRuntime.placement ?? snapshot?.widgetRuntime.placement ?? "loading"
+        }
+        onMouseEnter={() => {
+          void notifyPointerEnter();
+        }}
+        onMouseLeave={() => {
+          void notifyPointerLeave();
+        }}
+        onMouseDown={() => {
+          void notifyInteraction();
+        }}
+        onFocusCapture={() => {
+          void notifyInteraction();
+        }}
+      >
         <header className="edge-widget__header">
           <div className="edge-widget__eyebrow">Watch Tower</div>
           <div>
@@ -58,6 +82,11 @@ export function EdgeWidgetPage() {
         <StatusFooter
           runtimeStatus={widgetView?.runtimeStatus ?? snapshot?.health.status ?? "loading"}
           isStale={snapshot?.health.isStale ?? false}
+          widgetMode={widgetView?.widgetRuntime.mode ?? snapshot?.widgetRuntime.mode ?? "passive"}
+          widgetPlacement={
+            widgetView?.widgetRuntime.placement ?? snapshot?.widgetRuntime.placement ?? "hidden"
+          }
+          widgetFallback={widgetView?.widgetFallback ?? snapshot?.widgetRuntime.fallbackReason ?? null}
           diagnostics={
             snapshot?.diagnostics ?? {
               source: "system",

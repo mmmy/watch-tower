@@ -1,5 +1,6 @@
 use crate::config::repository::ConfigRepository;
 use crate::polling::alerts_client::ApiSignalsResponse;
+use crate::platform;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::{Mutex, Notify};
@@ -98,6 +99,19 @@ pub struct AlertRuntime {
     pub dashboard_focus_intent: Option<DashboardFocusIntent>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct WidgetBehaviorRuntime {
+    pub mode: String,
+    pub placement: String,
+    pub click_through_enabled: bool,
+    pub click_through_supported: bool,
+    pub fallback_reason: Option<String>,
+    pub wake_source: Option<String>,
+    pub interaction_session_id: u64,
+    pub idle_deadline_at: Option<u64>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DiagnosticsInfo {
@@ -119,6 +133,7 @@ pub struct AppSnapshot {
     pub diagnostics: DiagnosticsInfo,
     pub runtime: RuntimeInfo,
     pub alert_runtime: AlertRuntime,
+    pub widget_runtime: WidgetBehaviorRuntime,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -206,6 +221,7 @@ impl AppSnapshot {
                     last_active_status: None,
                 },
                 alert_runtime: AlertRuntime::default(),
+                widget_runtime: WidgetBehaviorRuntime::default(),
             },
             None => Self {
                 bootstrap_required: true,
@@ -231,7 +247,25 @@ impl AppSnapshot {
                     last_active_status: None,
                 },
                 alert_runtime: AlertRuntime::default(),
+                widget_runtime: WidgetBehaviorRuntime::default(),
             },
+        }
+    }
+}
+
+impl Default for WidgetBehaviorRuntime {
+    fn default() -> Self {
+        let (click_through_supported, fallback_reason) = platform::default_click_through_support();
+
+        Self {
+            mode: "passive".into(),
+            placement: "hidden".into(),
+            click_through_enabled: false,
+            click_through_supported,
+            fallback_reason,
+            wake_source: None,
+            interaction_session_id: 0,
+            idle_deadline_at: None,
         }
     }
 }

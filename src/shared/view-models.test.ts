@@ -7,6 +7,7 @@ import {
   buildResidentWidgetViewModel,
   getSnapshotRuntimeStatus,
 } from "./view-models";
+import type { WidgetBehaviorRuntime } from "./window-state";
 
 function createSnapshot(overrides?: Partial<AppSnapshot>): AppSnapshot {
   const config = sanitizeConfigInput({
@@ -57,6 +58,16 @@ function createSnapshot(overrides?: Partial<AppSnapshot>): AppSnapshot {
       pendingRead: null,
       dashboardFocusIntent: null,
     },
+    widgetRuntime: {
+      mode: "passive",
+      placement: "hidden",
+      clickThroughEnabled: false,
+      clickThroughSupported: true,
+      fallbackReason: null,
+      wakeSource: null,
+      interactionSessionId: 0,
+      idleDeadlineAt: null,
+    } satisfies WidgetBehaviorRuntime,
     ...overrides,
   };
 }
@@ -70,6 +81,7 @@ describe("view-models", () => {
     expect(widgetView.state).toBe("ready");
     expect(widgetView.groupSnapshot?.group.id).toBe("eth-swing");
     expect(widgetView.runtimeStatus).toBe("success");
+    expect(widgetView.widgetRuntime.mode).toBe("passive");
   });
 
   it("surfaces paused as the resident runtime status without losing the selected group", () => {
@@ -118,6 +130,26 @@ describe("view-models", () => {
     expect(widgetView.state).toBe("noGroups");
     expect(widgetView.groupSnapshot).toBeNull();
     expect(widgetView.runtimeStatus).toBe("configError");
+  });
+
+  it("surfaces widget fallback details alongside the resident projection", () => {
+    const snapshot = createSnapshot({
+      widgetRuntime: {
+        mode: "passive",
+        placement: "visible",
+        clickThroughEnabled: false,
+        clickThroughSupported: false,
+        fallbackReason: "Passive click-through is not enabled on this platform build.",
+        wakeSource: null,
+        interactionSessionId: 3,
+        idleDeadlineAt: null,
+      },
+    });
+
+    const widgetView = buildResidentWidgetViewModel(snapshot);
+
+    expect(widgetView.widgetFallback).toContain("Passive click-through");
+    expect(widgetView.widgetRuntime.clickThroughSupported).toBe(false);
   });
 
   it("builds an active popup view when an alert is present", () => {
