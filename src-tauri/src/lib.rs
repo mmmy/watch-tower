@@ -1,6 +1,7 @@
 mod app_state;
 mod commands;
 mod config;
+mod platform;
 mod polling;
 mod tray;
 mod windows;
@@ -44,7 +45,10 @@ pub fn run() {
             commands::mark_alert_read,
             commands::open_alert_in_dashboard,
             commands::clear_dashboard_focus_intent,
-            commands::set_notifications_enabled
+            commands::set_notifications_enabled,
+            commands::widget_pointer_enter,
+            commands::widget_pointer_leave,
+            commands::widget_interaction_ping
         ])
         .run(tauri::generate_context!())
         .expect("error while running watch tower");

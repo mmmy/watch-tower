@@ -1,5 +1,6 @@
 pub mod alert_popup;
 pub mod edge_widget;
+pub mod hover_state;
 pub mod positioning;
 
 use crate::app_state::AppSnapshot;

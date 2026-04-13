@@ -7,6 +7,7 @@ import type {
   PollingStatus,
 } from "./alert-model";
 import { normalizeGroupSnapshot } from "./alert-model";
+import { describeWidgetFallback, type WidgetBehaviorRuntime } from "./window-state";
 
 export interface GroupViewModel {
   groupSnapshot: ReturnType<typeof normalizeGroupSnapshot>;
@@ -19,6 +20,8 @@ export interface ResidentWidgetViewModel {
   state: "ready" | "bootstrapRequired" | "noGroups";
   groupSnapshot: NormalizedGroupSnapshot | null;
   runtimeStatus: PollingStatus;
+  widgetRuntime: WidgetBehaviorRuntime;
+  widgetFallback: string | null;
 }
 
 export interface AlertPopupViewModel {
@@ -74,6 +77,8 @@ export function buildResidentWidgetViewModel(
       state: "bootstrapRequired",
       groupSnapshot: null,
       runtimeStatus: getSnapshotRuntimeStatus(snapshot),
+      widgetRuntime: snapshot.widgetRuntime,
+      widgetFallback: describeWidgetFallback(snapshot.widgetRuntime),
     };
   }
 
@@ -82,6 +87,8 @@ export function buildResidentWidgetViewModel(
       state: "noGroups",
       groupSnapshot: null,
       runtimeStatus: getSnapshotRuntimeStatus(snapshot),
+      widgetRuntime: snapshot.widgetRuntime,
+      widgetFallback: describeWidgetFallback(snapshot.widgetRuntime),
     };
   }
 
@@ -94,6 +101,8 @@ export function buildResidentWidgetViewModel(
       nowMs,
     ),
     runtimeStatus: getSnapshotRuntimeStatus(snapshot),
+    widgetRuntime: snapshot.widgetRuntime,
+    widgetFallback: describeWidgetFallback(snapshot.widgetRuntime),
   };
 }
 

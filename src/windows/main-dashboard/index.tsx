@@ -309,6 +309,7 @@ export function MainDashboardPage() {
                 <DiagnosticsPanel
                   diagnostics={snapshot.diagnostics}
                   issues={viewModel?.groupSnapshot.issues ?? []}
+                  widgetRuntime={snapshot.widgetRuntime}
                 />
               </div>
             }

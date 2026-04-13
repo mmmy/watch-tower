@@ -79,6 +79,16 @@ function createFallbackSnapshot(): AppSnapshot {
       pendingRead: null,
       dashboardFocusIntent: null,
     },
+    widgetRuntime: {
+      mode: "passive",
+      placement: "hidden",
+      clickThroughEnabled: false,
+      clickThroughSupported: true,
+      fallbackReason: null,
+      wakeSource: null,
+      interactionSessionId: 0,
+      idleDeadlineAt: null,
+    },
   };
 }
 

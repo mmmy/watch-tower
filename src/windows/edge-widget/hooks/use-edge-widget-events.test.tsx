@@ -10,6 +10,7 @@ function HookHarness() {
       <div data-testid="widget-state">{widgetView?.state ?? "loading"}</div>
       <div data-testid="runtime-status">{widgetView?.runtimeStatus ?? "loading"}</div>
       <div data-testid="widget-symbol">{widgetView?.groupSnapshot?.group.symbol ?? "none"}</div>
+      <div data-testid="widget-mode">{widgetView?.widgetRuntime.mode ?? "none"}</div>
     </div>
   );
 }
@@ -22,6 +23,7 @@ describe("useEdgeWidgetEvents", () => {
       expect(screen.getByTestId("widget-state").textContent).toBe("ready");
       expect(screen.getByTestId("runtime-status").textContent).toBe("success");
       expect(screen.getByTestId("widget-symbol").textContent).toBe("BTCUSDT");
+      expect(screen.getByTestId("widget-mode").textContent).toBe("passive");
     });
   });
 });

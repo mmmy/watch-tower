@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import type { AppSnapshot } from "../../../shared/alert-model";
 import { sanitizeConfigInput } from "../../../shared/config-model";
 import { APP_SNAPSHOT_EVENT, type SnapshotEventPayload } from "../../../shared/events";
 import { buildResidentWidgetViewModel } from "../../../shared/view-models";
+import { WIDGET_REVEAL_DELAY_MS } from "../../../shared/window-state";
 
 function isTauriRuntime() {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
@@ -78,11 +79,22 @@ function createFallbackSnapshot(): AppSnapshot {
       pendingRead: null,
       dashboardFocusIntent: null,
     },
+    widgetRuntime: {
+      mode: "passive",
+      placement: "hidden",
+      clickThroughEnabled: false,
+      clickThroughSupported: true,
+      fallbackReason: null,
+      wakeSource: null,
+      interactionSessionId: 0,
+      idleDeadlineAt: null,
+    },
   };
 }
 
 export function useEdgeWidgetEvents() {
   const [snapshot, setSnapshot] = useState<AppSnapshot | null>(null);
+  const revealTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
     if (!isTauriRuntime()) {
@@ -122,11 +134,92 @@ export function useEdgeWidgetEvents() {
     [snapshot],
   );
 
+  const updateFallbackWidgetRuntime = useCallback((
+    mode: AppSnapshot["widgetRuntime"]["mode"],
+    placement: AppSnapshot["widgetRuntime"]["placement"],
+    wakeSource: AppSnapshot["widgetRuntime"]["wakeSource"],
+  ) => {
+    setSnapshot((currentSnapshot) =>
+      currentSnapshot
+        ? {
+            ...currentSnapshot,
+            widgetRuntime: {
+              ...currentSnapshot.widgetRuntime,
+              mode,
+              placement,
+              wakeSource,
+              interactionSessionId: currentSnapshot.widgetRuntime.interactionSessionId + 1,
+              idleDeadlineAt:
+                mode === "interactive" ? Date.now() + 1_600 : null,
+            },
+          }
+        : currentSnapshot,
+    );
+  }, []);
+
+  const notifyInteraction = useCallback(async () => {
+    if (revealTimerRef.current !== null) {
+      window.clearTimeout(revealTimerRef.current);
+      revealTimerRef.current = null;
+    }
+
+    if (!isTauriRuntime()) {
+      updateFallbackWidgetRuntime("interactive", "visible", "interaction");
+      return;
+    }
+
+    await invoke<AppSnapshot>("widget_interaction_ping");
+  }, [updateFallbackWidgetRuntime]);
+
+  const notifyPointerEnter = useCallback(async () => {
+    if (revealTimerRef.current !== null) {
+      window.clearTimeout(revealTimerRef.current);
+    }
+
+    if (!isTauriRuntime()) {
+      updateFallbackWidgetRuntime("hover", "visible", "pointer");
+      revealTimerRef.current = window.setTimeout(() => {
+        void notifyInteraction();
+      }, WIDGET_REVEAL_DELAY_MS);
+      return;
+    }
+
+    await invoke<AppSnapshot>("widget_pointer_enter");
+    revealTimerRef.current = window.setTimeout(() => {
+      void notifyInteraction();
+    }, WIDGET_REVEAL_DELAY_MS);
+  }, [notifyInteraction, updateFallbackWidgetRuntime]);
+
+  const notifyPointerLeave = useCallback(async () => {
+    if (revealTimerRef.current !== null) {
+      window.clearTimeout(revealTimerRef.current);
+      revealTimerRef.current = null;
+    }
+
+    if (!isTauriRuntime()) {
+      updateFallbackWidgetRuntime("passive", "hidden", null);
+      return;
+    }
+
+    await invoke<AppSnapshot>("widget_pointer_leave");
+  }, [updateFallbackWidgetRuntime]);
+
+  useEffect(() => {
+    return () => {
+      if (revealTimerRef.current !== null) {
+        window.clearTimeout(revealTimerRef.current);
+      }
+    };
+  }, []);
+
   return useMemo(
     () => ({
       snapshot,
       widgetView,
+      notifyPointerEnter,
+      notifyPointerLeave,
+      notifyInteraction,
     }),
-    [snapshot, widgetView],
+    [snapshot, widgetView, notifyPointerEnter, notifyPointerLeave, notifyInteraction],
   );
 }

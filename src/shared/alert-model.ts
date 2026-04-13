@@ -1,5 +1,6 @@
 import type { AppConfig, SupportedPeriod, WatchGroupConfig } from "./config-model";
 import { computeBarIndex, sortPeriods } from "./period-utils";
+import type { WidgetBehaviorRuntime } from "./window-state";
 
 export interface ApiSignalEntry {
   sd: 1 | -1;
@@ -87,6 +88,7 @@ export interface AppSnapshot {
   diagnostics: DiagnosticsInfo;
   runtime: RuntimeInfo;
   alertRuntime: AlertRuntime;
+  widgetRuntime: WidgetBehaviorRuntime;
 }
 
 export interface NormalizedSignal {

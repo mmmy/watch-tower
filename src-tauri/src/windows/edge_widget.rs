@@ -1,4 +1,5 @@
 use crate::app_state::AppSnapshot;
+use crate::platform;
 use crate::windows::positioning::compute_widget_placement;
 use tauri::{
     Manager, PhysicalPosition, PhysicalSize, WebviewUrl, WebviewWindow, WebviewWindowBuilder,
@@ -21,9 +22,15 @@ pub fn sync_edge_widget(app: &tauri::AppHandle, snapshot: &AppSnapshot) -> Resul
     window
         .set_size(PhysicalSize::new(placement.width, placement.height))
         .map_err(|error| error.to_string())?;
+    let x = if snapshot.widget_runtime.placement == "hidden" {
+        placement.hidden_x
+    } else {
+        placement.visible_x
+    };
     window
-        .set_position(PhysicalPosition::new(placement.x, placement.y))
+        .set_position(PhysicalPosition::new(x, placement.y))
         .map_err(|error| error.to_string())?;
+    let _ = platform::apply_click_through(&window, snapshot.widget_runtime.click_through_enabled);
     window.show().map_err(|error| error.to_string())?;
 
     Ok(())

@@ -132,7 +132,10 @@ fn toggle_polling_menu_text(snapshot: &AppSnapshot) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::{runtime_status_label, toggle_polling_menu_text};
-    use crate::app_state::{AlertRuntime, AppSnapshot, DiagnosticsInfo, PollingHealth, RuntimeInfo};
+    use crate::app_state::{
+        AlertRuntime, AppSnapshot, DiagnosticsInfo, PollingHealth, RuntimeInfo,
+        WidgetBehaviorRuntime,
+    };
 
     fn test_snapshot() -> AppSnapshot {
         AppSnapshot {
@@ -157,6 +160,7 @@ mod tests {
                 last_active_status: None,
             },
             alert_runtime: AlertRuntime::default(),
+            widget_runtime: WidgetBehaviorRuntime::default(),
         }
     }
 
