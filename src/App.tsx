@@ -32,8 +32,6 @@ const WIDGET_EDGE_THRESHOLD = 56;
 const WIDGET_PEEK = 24;
 const WIDGET_VISIBLE_MARGIN = 12;
 const WIDGET_AUTO_HIDE_DELAY = 520;
-const WIDGET_DRAG_THRESHOLD = 8;
-
 function detectViewMode(): ViewMode {
   const params = new URLSearchParams(window.location.search);
   return params.get("view") === "widget" ? "widget" : "main";
@@ -267,11 +265,10 @@ function WidgetView({ snapshot }: { snapshot: RuntimeSnapshot | null }) {
   const animationTokenRef = useRef(0);
   const moveDebounceRef = useRef<number | null>(null);
   const programmaticMoveRef = useRef(false);
+  const lastDragAtRef = useRef(0);
   const pointerGestureRef = useRef<{
     pointerId: number;
-    startClientX: number;
-    startClientY: number;
-    dragTriggered: boolean;
+    dragStarted: boolean;
   } | null>(null);
 
   useEffect(() => {
@@ -288,6 +285,7 @@ function WidgetView({ snapshot }: { snapshot: RuntimeSnapshot | null }) {
       }
 
       draggingWindowRef.current = true;
+      lastDragAtRef.current = performance.now();
       cancelHideTimer();
 
       if (moveDebounceRef.current) {
@@ -316,20 +314,6 @@ function WidgetView({ snapshot }: { snapshot: RuntimeSnapshot | null }) {
       unlistenMoved?.();
       delete document.documentElement.dataset.view;
       delete document.body.dataset.view;
-    };
-  }, []);
-
-  useEffect(() => {
-    function clearGesture() {
-      pointerGestureRef.current = null;
-    }
-
-    window.addEventListener("pointerup", clearGesture);
-    window.addEventListener("pointercancel", clearGesture);
-
-    return () => {
-      window.removeEventListener("pointerup", clearGesture);
-      window.removeEventListener("pointercancel", clearGesture);
     };
   }, []);
 
@@ -483,49 +467,36 @@ function WidgetView({ snapshot }: { snapshot: RuntimeSnapshot | null }) {
     }
   }
 
-  async function handleWidgetPointerDown(event: React.PointerEvent<HTMLDivElement>) {
-    if (event.button !== 0 || draggingWindowRef.current || pointerGestureRef.current) {
+  function handleWidgetPointerDown(event: React.PointerEvent<HTMLDivElement>) {
+    if (event.button !== 0) {
       return;
     }
 
     cancelHideTimer();
     pointerGestureRef.current = {
       pointerId: event.pointerId,
-      startClientX: event.clientX,
-      startClientY: event.clientY,
-      dragTriggered: false,
+      dragStarted: false,
     };
     event.currentTarget.setPointerCapture(event.pointerId);
   }
 
   async function handleWidgetPointerMove(event: React.PointerEvent<HTMLDivElement>) {
     const gesture = pointerGestureRef.current;
-    if (!gesture || gesture.pointerId !== event.pointerId || gesture.dragTriggered) {
+    if (!gesture || gesture.pointerId !== event.pointerId || gesture.dragStarted || event.buttons !== 1) {
       return;
     }
 
-    const deltaX = event.clientX - gesture.startClientX;
-    const deltaY = event.clientY - gesture.startClientY;
-    const distance = Math.hypot(deltaX, deltaY);
-
-    if (distance < WIDGET_DRAG_THRESHOLD) {
-      return;
-    }
-
-    gesture.dragTriggered = true;
-    draggingWindowRef.current = true;
-    cancelHideTimer();
+    gesture.dragStarted = true;
 
     try {
       await getCurrentWindow().startDragging();
     } catch (error) {
       console.error("startDragging failed", error);
-      draggingWindowRef.current = false;
-      pointerGestureRef.current = null;
+      gesture.dragStarted = false;
     }
   }
 
-  async function finishWidgetPointer(event: React.PointerEvent<HTMLDivElement>) {
+  async function handleWidgetPointerFinish(event: React.PointerEvent<HTMLDivElement>) {
     const gesture = pointerGestureRef.current;
     if (!gesture || gesture.pointerId !== event.pointerId) {
       return;
@@ -536,7 +507,7 @@ function WidgetView({ snapshot }: { snapshot: RuntimeSnapshot | null }) {
       event.currentTarget.releasePointerCapture(event.pointerId);
     }
 
-    if (!gesture.dragTriggered) {
+    if (!gesture.dragStarted && performance.now() - lastDragAtRef.current >= 250) {
       await toggleMain();
     }
   }
@@ -612,10 +583,10 @@ function WidgetView({ snapshot }: { snapshot: RuntimeSnapshot | null }) {
         <span className="widget-glow" />
         <div
           className="widget-drag-hit-area"
-          onPointerCancel={(event) => void finishWidgetPointer(event)}
+          onPointerCancel={(event) => void handleWidgetPointerFinish(event)}
           onPointerDown={(event) => void handleWidgetPointerDown(event)}
           onPointerMove={(event) => void handleWidgetPointerMove(event)}
-          onPointerUp={(event) => void finishWidgetPointer(event)}
+          onPointerUp={(event) => void handleWidgetPointerFinish(event)}
         >
           <div className="widget-drag-layer" aria-hidden="true">
             <span className="widget-count">{snapshot?.unread_count ?? 0}</span>
@@ -706,6 +677,8 @@ function GroupPanel({
   onMarkGroupRead: (signals: RuntimeSignal[]) => void;
 }) {
   const unreadCount = signals.filter((signal) => signal.unread).length;
+  const [actionsOpen, setActionsOpen] = useState(false);
+  const actionsRef = useRef<HTMLDivElement | null>(null);
   const bySignalType = group.signal_types.map((signalType) => ({
     signalType,
     items: group.periods
@@ -715,6 +688,38 @@ function GroupPanel({
       .filter((signal): signal is RuntimeSignal => Boolean(signal)),
   }));
 
+  useEffect(() => {
+    if (!actionsOpen) {
+      return;
+    }
+
+    function handlePointerDown(event: PointerEvent) {
+      if (actionsRef.current && !actionsRef.current.contains(event.target as Node)) {
+        setActionsOpen(false);
+      }
+    }
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setActionsOpen(false);
+      }
+    }
+
+    window.addEventListener("pointerdown", handlePointerDown);
+    window.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      window.removeEventListener("pointerdown", handlePointerDown);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [actionsOpen]);
+
+  useEffect(() => {
+    if (unreadCount === 0 && actionsOpen) {
+      setActionsOpen(false);
+    }
+  }, [actionsOpen, unreadCount]);
+
   return (
     <section className="group-card">
       <header className="group-topline">
@@ -723,14 +728,36 @@ function GroupPanel({
           <span className="group-name">{group.name}</span>
         </div>
         <div className="group-actions">
-          {unreadCount > 0 ? <span className="group-unread">{unreadCount} unread</span> : null}
-          <button
-            className="group-read-button"
-            onClick={() => onMarkGroupRead(signals.filter((signal) => signal.unread))}
-            type="button"
-          >
-            全部已读
-          </button>
+          {unreadCount > 0 ? (
+            <div className="group-unread-actions" ref={actionsRef}>
+              <button
+                aria-expanded={actionsOpen}
+                aria-haspopup="menu"
+                aria-label={`未读 ${unreadCount} 条`}
+                className="group-unread"
+                onClick={() => setActionsOpen((value) => !value)}
+                title={`未读 ${unreadCount} 条`}
+                type="button"
+              >
+                {unreadCount}
+              </button>
+              {actionsOpen ? (
+                <div className="group-unread-menu" role="menu">
+                  <button
+                    className="group-read-button"
+                    onClick={() => {
+                      onMarkGroupRead(signals.filter((signal) => signal.unread));
+                      setActionsOpen(false);
+                    }}
+                    role="menuitem"
+                    type="button"
+                  >
+                    全部已读
+                  </button>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
         </div>
       </header>
       {bySignalType.map(({ signalType, items }) => (
@@ -960,8 +987,11 @@ function MainView({ snapshot, setSnapshot }: { snapshot: RuntimeSnapshot; setSna
       </header>
 
       <div className="plugin-statusbar">
-        <span className={`status-highlight ${snapshot.unread_count === 0 ? "is-clear" : ""}`}>
-          Total unread:{snapshot.unread_count}
+        <span
+          className={`status-highlight ${snapshot.unread_count === 0 ? "is-clear" : ""}`}
+          title={`未读 ${snapshot.unread_count} 条`}
+        >
+          {snapshot.unread_count}
         </span>
         <span>last poll: {formatTime(snapshot.last_updated_at)}</span>
         <span className={`connection-status ${connectionState.tone}`}>

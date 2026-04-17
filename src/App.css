@@ -7,6 +7,7 @@
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     line-height: 1.25;
+    --signal-row-height: 21px;
 }
 
 * {
@@ -75,31 +76,33 @@ button:focus-visible {
 }
 
 .plugin-toolbar {
-  display: flex;
-  flex-wrap: nowrap;
-  gap: 8px;
-  align-items: center;
-  padding: 4px 8px;
-  border-bottom: 1px solid #d0d0d0;
-  background: #efefef;
-  font-size: 12px;
-  overflow-x: auto;
-  overflow-y: visible;
+    display: flex;
+    flex-wrap: nowrap;
+    gap: 8px;
+    align-items: center;
+    padding: 4px 8px;
+    border-bottom: 1px solid #d0d0d0;
+    background: #efefef;
+    font-size: 12px;
+    overflow: visible;
 }
 
 .toolbar-primary {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-  flex: 1 1 auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    flex: 1 1 auto;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: thin;
 }
 
 .toolbar-toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  white-space: nowrap;
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    white-space: nowrap;
 }
 
 .toolbar-toggle input {
@@ -118,38 +121,38 @@ button:focus-visible {
 }
 
 .toolbar-number:focus-visible {
-  outline: 1px solid #111;
-  outline-offset: 1px;
+    outline: 1px solid #111;
+    outline-offset: 1px;
 }
 
 .toolbar-more {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  flex: 0 0 auto;
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    flex: 0 0 auto;
 }
 
 .toolbar-menu {
-  position: absolute;
-  right: 0;
-  top: calc(100% + 4px);
-  z-index: 20;
-  display: grid;
-  gap: 4px;
-  min-width: 140px;
-  padding: 6px;
-  border: 1px solid #cfcfcf;
-  background: #fff;
-  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.08);
+    position: absolute;
+    right: 0;
+    top: calc(100% + 4px);
+    z-index: 20;
+    display: grid;
+    gap: 4px;
+    min-width: 140px;
+    padding: 6px;
+    border: 1px solid #cfcfcf;
+    background: #fff;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.08);
 }
 
 .toolbar-menu-field {
-  display: grid;
-  gap: 2px;
+    display: grid;
+    gap: 2px;
 }
 
 .toolbar-menu-field span {
-  color: #666;
+    color: #666;
 }
 
 .plugin-statusbar {
@@ -167,7 +170,8 @@ button:focus-visible {
 .status-highlight {
     color: #111;
     background: #ffba00;
-    padding: 0 3px;
+    padding: 0 5px;
+    font-size: 14px;
 }
 
 .status-highlight.is-clear {
@@ -234,7 +238,7 @@ button:focus-visible {
 }
 
 .group-symbol {
-    font-size: 20px;
+    font-size: 14px;
     font-weight: 400;
     color: #555;
 }
@@ -251,18 +255,51 @@ button:focus-visible {
     flex-wrap: wrap;
 }
 
+.group-unread-actions {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+}
+
 .group-unread {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 20px;
+    min-height: 20px;
+    border: none;
     background: #ffba00;
     color: #111;
     padding: 0 4px;
+    border-radius: 999px;
+}
+
+.group-unread:focus-visible {
+    outline: 1px solid #111;
+    outline-offset: 1px;
+}
+
+.group-unread-menu {
+    position: absolute;
+    top: calc(100% + 6px);
+    right: 0;
+    z-index: 10;
+    display: grid;
+    min-width: 88px;
+    padding: 4px;
+    border: 1px solid #cfcfcf;
+    border-radius: 6px;
+    background: #fff;
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.12);
 }
 
 .group-read-button {
     min-height: 20px;
-    padding: 0 4px;
+    padding: 0 6px;
     font-size: 12px;
-    color: #666;
+    color: #444;
     background: #f7f7f7;
+    white-space: nowrap;
 }
 
 .signal-block + .signal-block {
@@ -292,7 +329,7 @@ button:focus-visible {
 
 .period-label {
     justify-self: start;
-    min-height: 20px;
+    min-height: var(--signal-row-height);
     padding: 0;
     border: none;
     background: transparent;
@@ -316,7 +353,7 @@ button:focus-visible {
 }
 
 .period-cell {
-    height: 21px;
+    height: var(--signal-row-height);
     border-radius: 1px;
     background: #eceff3;
 }
@@ -385,13 +422,14 @@ button:focus-visible {
 
 .widget-drag-layer,
 .widget-drag-layer * {
-  pointer-events: none;
-  user-select: none;
-  -webkit-user-select: none;
+    pointer-events: none;
+    user-select: none;
+    -webkit-user-select: none;
 }
 
 .widget-orb.is-hot {
-    animation: none;
+    background:
+        radial-gradient(circle at 30% 30%, rgba(255, 223, 145, 0.88), rgba(255, 156, 77, 0.92) 48%, #d94b3d 100%);
 }
 
 .widget-orb.is-calm {
@@ -427,5 +465,21 @@ button:focus-visible {
 @media (max-width: 640px) {
     .period-row {
         grid-template-columns: 36px minmax(0, 1fr);
+    }
+}
+
+@media (max-width: 399px) {
+    :root {
+        --signal-row-height: 16px;
+    }
+
+    .period-row {
+        grid-template-columns: 32px minmax(0, 1fr);
+        gap: 4px;
+    }
+
+    .period-label {
+        font-size: 12px;
+        line-height: 1;
     }
 }
