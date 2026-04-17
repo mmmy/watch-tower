@@ -67,6 +67,21 @@ function formatTime(ts: number) {
   }).format(ts);
 }
 
+function getConnectionState(lastUpdatedAt: number, intervalSecs: number, now: number) {
+  const elapsedMs = Math.max(0, now - lastUpdatedAt);
+  const expectedMs = Math.max(intervalSecs, 1) * 1000;
+
+  if (elapsedMs <= expectedMs * 2) {
+    return { label: "连接正常", tone: "online" as const };
+  }
+
+  if (elapsedMs <= expectedMs * 4) {
+    return { label: "连接延迟", tone: "lagging" as const };
+  }
+
+  return { label: "连接超时", tone: "offline" as const };
+}
+
 function signalKey(signal: RuntimeSignal): SignalMutationInput {
   return {
     group_id: signal.group_id,
@@ -643,7 +658,7 @@ function PeriodRow({
   return (
     <div className={`period-row ${signal.unread ? "is-unread" : ""}`}>
       <button
-        className={`period-label ${isLong ? "long" : "short"}`}
+        className={`period-label ${signal.unread ? "unread" : "read"} ${isLong ? "long" : "short"}`}
         onClick={() => onMarkRead(signal, signal.unread)}
         title={signal.unread ? "标记已读" : "恢复未读"}
         type="button"
@@ -701,7 +716,11 @@ function GroupPanel({
         </div>
         <div className="group-actions">
           {unreadCount > 0 ? <span className="group-unread">{unreadCount} unread</span> : null}
-          <button onClick={() => onMarkGroupRead(signals.filter((signal) => signal.unread))} type="button">
+          <button
+            className="group-read-button"
+            onClick={() => onMarkGroupRead(signals.filter((signal) => signal.unread))}
+            type="button"
+          >
             全部已读
           </button>
         </div>
@@ -731,6 +750,7 @@ function GroupPanel({
 function MainView({ snapshot, setSnapshot }: { snapshot: RuntimeSnapshot; setSnapshot: (value: RuntimeSnapshot) => void }) {
   const groups = useMemo(() => groupedSignals(snapshot), [snapshot]);
   const [edgeWidthInput, setEdgeWidthInput] = useState(() => String(Math.round(snapshot.config.ui.edge_width)));
+  const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
     document.documentElement.dataset.view = "main";
@@ -739,6 +759,14 @@ function MainView({ snapshot, setSnapshot }: { snapshot: RuntimeSnapshot; setSna
       delete document.documentElement.dataset.view;
       delete document.body.dataset.view;
     };
+  }, []);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      setNow(Date.now());
+    }, 1000);
+
+    return () => window.clearInterval(timer);
   }, []);
 
   useEffect(() => {
@@ -818,6 +846,12 @@ function MainView({ snapshot, setSnapshot }: { snapshot: RuntimeSnapshot; setSna
     void setEdgeWidth(normalized).then(setSnapshot);
   }
 
+  const connectionState = getConnectionState(
+    snapshot.last_updated_at,
+    snapshot.config.poll.interval_secs,
+    now,
+  );
+
   return (
     <div className="plugin-shell">
       <header className="plugin-toolbar">
@@ -864,8 +898,14 @@ function MainView({ snapshot, setSnapshot }: { snapshot: RuntimeSnapshot; setSna
       </header>
 
       <div className="plugin-statusbar">
-        <span className="status-highlight">Total unread:{snapshot.unread_count}</span>
-        <span>last poll: {formatTime(snapshot.last_updated_at)} (刚刚)</span>
+        <span className={`status-highlight ${snapshot.unread_count === 0 ? "is-clear" : ""}`}>
+          Total unread:{snapshot.unread_count}
+        </span>
+        <span>last poll: {formatTime(snapshot.last_updated_at)}</span>
+        <span className={`connection-status ${connectionState.tone}`}>
+          <span className="connection-dot" />
+          {connectionState.label}
+        </span>
       </div>
 
       <main className="plugin-content">

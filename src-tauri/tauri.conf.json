@@ -14,9 +14,9 @@
       {
         "label": "main",
         "title": "Signal Desk Console",
-        "width": 760,
-        "height": 920,
-        "minWidth": 420,
+        "width": 300,
+        "height": 800,
+        "minWidth": 100,
         "minHeight": 640,
         "resizable": true,
         "fullscreen": false,

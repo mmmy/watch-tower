@@ -142,6 +142,37 @@ button:focus-visible {
   padding: 0 3px;
 }
 
+.status-highlight.is-clear {
+  color: #666;
+  background: transparent;
+  padding: 0;
+}
+
+.connection-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.connection-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.connection-status.online {
+  color: #2a9d57;
+}
+
+.connection-status.lagging {
+  color: #d99500;
+}
+
+.connection-status.offline {
+  color: #cc4b4b;
+}
+
 .plugin-content {
   flex: 1;
   overflow-y: auto;
@@ -197,6 +228,14 @@ button:focus-visible {
   padding: 0 4px;
 }
 
+.group-read-button {
+  min-height: 20px;
+  padding: 0 4px;
+  font-size: 12px;
+  color: #666;
+  background: #f7f7f7;
+}
+
 .signal-block + .signal-block {
   margin-top: 8px;
 }
@@ -228,13 +267,16 @@ button:focus-visible {
   padding: 0;
   border: none;
   background: transparent;
-  color: #555;
+  color: #777;
   font-weight: 600;
 }
 
-.period-label.long,
-.period-label.short {
+.period-label.unread {
   color: #d99500;
+}
+
+.period-label.read {
+  color: #555;
 }
 
 .period-track {

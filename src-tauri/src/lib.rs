@@ -1,11 +1,12 @@
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     fs,
     path::PathBuf,
     sync::{Arc, Mutex},
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
+use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use tauri::{
     async_runtime::spawn,
@@ -139,6 +140,59 @@ struct SignalMutationInput {
     period: String,
 }
 
+#[derive(Debug, Serialize)]
+struct SignalListRequest {
+    symbols: String,
+    periods: String,
+    #[serde(rename = "signalTypes")]
+    signal_types: String,
+    page: u32,
+    #[serde(rename = "pageSize")]
+    page_size: u32,
+}
+
+#[derive(Debug, Serialize)]
+struct ReadStatusRequest {
+    symbol: String,
+    period: String,
+    #[serde(rename = "signalType")]
+    signal_type: String,
+    read: bool,
+}
+
+#[derive(Debug, Serialize)]
+struct DeleteSignalRequest {
+    symbol: String,
+    period: String,
+    #[serde(rename = "signalType")]
+    signal_type: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct SignalListResponse {
+    #[serde(default)]
+    data: Vec<SignalListItem>,
+}
+
+#[derive(Debug, Deserialize)]
+struct SignalListItem {
+    symbol: String,
+    #[serde(deserialize_with = "deserialize_stringish")]
+    period: String,
+    #[serde(default)]
+    signals: HashMap<String, RemoteSignalDetail>,
+}
+
+#[derive(Debug, Deserialize)]
+struct RemoteSignalDetail {
+    #[serde(default)]
+    sd: i8,
+    #[serde(default)]
+    t: i64,
+    #[serde(default)]
+    read: bool,
+}
+
 #[derive(Debug, Clone, Copy)]
 struct WindowRestoreBounds {
     x: i32,
@@ -157,7 +211,6 @@ struct RuntimeStore {
     always_on_top: bool,
     edge_mode: bool,
     main_visible: bool,
-    rotation_cursor: usize,
     restore_bounds: Option<WindowRestoreBounds>,
 }
 
@@ -177,19 +230,16 @@ fn now_ms() -> i64 {
         .as_millis() as i64
 }
 
-fn period_to_ms(period: &str) -> i64 {
-    match period {
-        "W" => 7 * 24 * 60 * 60 * 1000,
-        "D" => 24 * 60 * 60 * 1000,
-        _ if period.ends_with('D') => period
-            .trim_end_matches('D')
-            .parse::<i64>()
-            .unwrap_or(1)
-            * 24
-            * 60
-            * 60
-            * 1000,
-        _ => period.parse::<i64>().unwrap_or(1) * 60 * 1000,
+fn deserialize_stringish<'de, D>(deserializer: D) -> Result<String, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = serde_json::Value::deserialize(deserializer)?;
+    match value {
+        serde_json::Value::String(text) => Ok(text),
+        serde_json::Value::Number(number) => Ok(number.to_string()),
+        serde_json::Value::Null => Ok(String::new()),
+        other => Ok(other.to_string().trim_matches('"').to_string()),
     }
 }
 
@@ -257,27 +307,22 @@ fn load_config() -> AppConfig {
 }
 
 fn seed_signals(config: &AppConfig) -> Vec<RuntimeSignal> {
-    let now = now_ms();
-    let mut counter = 0usize;
     let mut signals = Vec::new();
 
     for group in config.groups.iter().filter(|group| group.enabled) {
         for signal_type in &group.signal_types {
             for period in &group.periods {
-                let step = period_to_ms(period);
-                let distance = ((counter % 18) as i64) + 1;
                 signals.push(RuntimeSignal {
                     group_id: group.id.clone(),
                     group_name: group.name.clone(),
                     symbol: group.symbol.clone(),
                     period: period.clone(),
                     signal_type: signal_type.clone(),
-                    side: if counter % 2 == 0 { 1 } else { -1 },
-                    trigger_time: now - step * distance,
-                    unread: counter % 11 == 0,
+                    side: 1,
+                    trigger_time: 0,
+                    unread: false,
                     deleted: false,
                 });
-                counter += 1;
             }
         }
     }
@@ -321,30 +366,6 @@ impl RuntimeStore {
         }
     }
 
-    fn cycle_signal(&mut self) {
-        if self.signals.is_empty() {
-            return;
-        }
-
-        let len = self.signals.len();
-        for _ in 0..len {
-            let index = self.rotation_cursor % len;
-            self.rotation_cursor = (self.rotation_cursor + 1) % len;
-            let signal = &mut self.signals[index];
-            if signal.deleted {
-                continue;
-            }
-
-            signal.unread = true;
-            signal.side *= -1;
-            signal.trigger_time = now_ms();
-            self.last_tick += 1;
-            self.last_updated_at = now_ms();
-            break;
-        }
-        self.recompute_unread();
-    }
-
     fn mark_signal_read(&mut self, input: &SignalMutationInput, read: bool) -> bool {
         if let Some(signal) = self.signals.iter_mut().find(|signal| {
             !signal.deleted
@@ -377,6 +398,13 @@ impl RuntimeStore {
 
         false
     }
+
+    fn apply_remote_signals(&mut self, signals: Vec<RuntimeSignal>) {
+        self.signals = signals;
+        self.last_tick += 1;
+        self.last_updated_at = now_ms();
+        self.recompute_unread();
+    }
 }
 
 fn emit_snapshot(app: &AppHandle, snapshot: RuntimeSnapshot) {
@@ -386,6 +414,133 @@ fn emit_snapshot(app: &AppHandle, snapshot: RuntimeSnapshot) {
 fn with_store<T>(state: &State<'_, SharedState>, f: impl FnOnce(&mut RuntimeStore) -> T) -> T {
     let mut guard = state.0.lock().expect("runtime store poisoned");
     f(&mut guard)
+}
+
+async fn post_json<TReq: Serialize, TRes: for<'de> Deserialize<'de>>(
+    config: &AppConfig,
+    path: &str,
+    body: &TReq,
+) -> Result<TRes, String> {
+    let url = format!(
+        "{}/{}",
+        config.api.base_url.trim_end_matches('/'),
+        path.trim_start_matches('/')
+    );
+
+    let response = Client::new()
+        .post(url)
+        .header("x-api-key", &config.api.api_key)
+        .json(body)
+        .send()
+        .await
+        .map_err(|err| err.to_string())?;
+
+    let status = response.status();
+    if !status.is_success() {
+        let body = response.text().await.unwrap_or_default();
+        return Err(format!("request failed: {} {}", status, body));
+    }
+
+    response.json::<TRes>().await.map_err(|err| err.to_string())
+}
+
+async fn post_json_unit<TReq: Serialize>(
+    config: &AppConfig,
+    path: &str,
+    body: &TReq,
+) -> Result<(), String> {
+    let url = format!(
+        "{}/{}",
+        config.api.base_url.trim_end_matches('/'),
+        path.trim_start_matches('/')
+    );
+
+    let response = Client::new()
+        .post(url)
+        .header("x-api-key", &config.api.api_key)
+        .json(body)
+        .send()
+        .await
+        .map_err(|err| err.to_string())?;
+
+    let status = response.status();
+    if !status.is_success() {
+        let body = response.text().await.unwrap_or_default();
+        return Err(format!("request failed: {} {}", status, body));
+    }
+
+    Ok(())
+}
+
+async fn fetch_runtime_signals(config: &AppConfig) -> Result<Vec<RuntimeSignal>, String> {
+    let mut signals = seed_signals(config);
+    let mut index_by_key = HashMap::new();
+
+    for (index, signal) in signals.iter().enumerate() {
+        index_by_key.insert(
+            (
+                signal.group_id.clone(),
+                signal.signal_type.clone(),
+                signal.period.clone(),
+            ),
+            index,
+        );
+    }
+
+    for group in config.groups.iter().filter(|group| group.enabled) {
+        let request = SignalListRequest {
+            symbols: group.symbol.clone(),
+            periods: group.periods.join(","),
+            signal_types: group.signal_types.join(","),
+            page: 1,
+            page_size: config.poll.page_size,
+        };
+
+        let response: SignalListResponse = post_json(
+            config,
+            "/api/open/watch-list/symbol-signals",
+            &request,
+        )
+        .await?;
+
+        for item in response.data {
+            for (signal_type, detail) in item.signals {
+                if let Some(index) = index_by_key.get(&(
+                    group.id.clone(),
+                    signal_type.clone(),
+                    item.period.clone(),
+                )) {
+                    let signal = &mut signals[*index];
+                    signal.symbol = item.symbol.clone();
+                    signal.side = if detail.sd >= 0 { 1 } else { -1 };
+                    signal.trigger_time = detail.t;
+                    signal.unread = !detail.read;
+                }
+            }
+        }
+    }
+
+    Ok(signals)
+}
+
+async fn refresh_runtime_from_api(
+    app: &AppHandle,
+    shared_state: &SharedState,
+) -> Result<RuntimeSnapshot, String> {
+    let config = {
+        let guard = shared_state.0.lock().expect("runtime store poisoned");
+        guard.config.clone()
+    };
+
+    let signals = fetch_runtime_signals(&config).await?;
+    let snapshot = {
+        let mut guard = shared_state.0.lock().expect("runtime store poisoned");
+        guard.apply_remote_signals(signals);
+        guard.snapshot()
+    };
+
+    emit_snapshot(app, snapshot.clone());
+    Ok(snapshot)
 }
 
 fn window_visible(window: &tauri::WebviewWindow) -> bool {
@@ -575,14 +730,13 @@ fn handle_menu_event(app: &AppHandle, event: MenuEvent) {
             let _ = toggle_main_window(app, &state);
         }
         "simulate_signal" => {
-            let snapshot = {
-                let mut guard = state.0.lock().expect("runtime store poisoned");
-                guard.cycle_signal();
-                guard.main_visible = true;
-                guard.snapshot()
-            };
-            let _ = show_main_window(app);
-            emit_snapshot(app, snapshot);
+            let app_handle = app.clone();
+            let shared_state = state.inner().clone();
+            spawn(async move {
+                if refresh_runtime_from_api(&app_handle, &shared_state).await.is_ok() {
+                    let _ = show_main_window(&app_handle);
+                }
+            });
         }
         "toggle_pin" => {
             let snapshot = {
@@ -602,6 +756,10 @@ fn handle_menu_event(app: &AppHandle, event: MenuEvent) {
 
 fn spawn_runtime_loop(app: AppHandle) {
     spawn(async move {
+        if let Some(state) = app.try_state::<SharedState>() {
+            let _ = refresh_runtime_from_api(&app, &state).await;
+        }
+
         loop {
             let interval_secs = app
                 .try_state::<SharedState>()
@@ -615,15 +773,11 @@ fn spawn_runtime_loop(app: AppHandle) {
                 continue;
             };
 
-            let snapshot = {
-                let mut guard = state.0.lock().expect("runtime store poisoned");
-                guard.cycle_signal();
-                guard.main_visible = true;
-                guard.snapshot()
-            };
-
-            let _ = show_main_window(&app);
-            emit_snapshot(&app, snapshot);
+            if let Ok(snapshot) = refresh_runtime_from_api(&app, &state).await {
+                if snapshot.unread_count > 0 {
+                    let _ = show_main_window(&app);
+                }
+            }
         }
     });
 }
@@ -634,12 +788,40 @@ fn get_runtime_snapshot(state: State<'_, SharedState>) -> RuntimeSnapshot {
 }
 
 #[tauri::command]
-fn mark_signal_read(
+async fn mark_signal_read(
     app: AppHandle,
     state: State<'_, SharedState>,
     input: SignalMutationInput,
     read: bool,
 ) -> Result<RuntimeSnapshot, String> {
+    let (config, symbol) = with_store(&state, |store| {
+        let signal = store
+            .signals
+            .iter()
+            .find(|signal| {
+                !signal.deleted
+                    && signal.group_id == input.group_id
+                    && signal.signal_type == input.signal_type
+                    && signal.period == input.period
+            })
+            .cloned();
+        signal.map(|signal| (store.config.clone(), signal.symbol))
+    })
+    .ok_or_else(|| "signal not found".to_string())?;
+
+    let request = ReadStatusRequest {
+        symbol,
+        period: input.period.clone(),
+        signal_type: input.signal_type.clone(),
+        read,
+    };
+    post_json_unit(
+        &config,
+        "/api/open/watch-list/symbol-alert/read-status",
+        &request,
+    )
+    .await?;
+
     let snapshot = with_store(&state, |store| {
         if !store.mark_signal_read(&input, read) {
             return Err("signal not found".to_string());
@@ -651,11 +833,38 @@ fn mark_signal_read(
 }
 
 #[tauri::command]
-fn delete_signal(
+async fn delete_signal(
     app: AppHandle,
     state: State<'_, SharedState>,
     input: SignalMutationInput,
 ) -> Result<RuntimeSnapshot, String> {
+    let (config, symbol) = with_store(&state, |store| {
+        let signal = store
+            .signals
+            .iter()
+            .find(|signal| {
+                !signal.deleted
+                    && signal.group_id == input.group_id
+                    && signal.signal_type == input.signal_type
+                    && signal.period == input.period
+            })
+            .cloned();
+        signal.map(|signal| (store.config.clone(), signal.symbol))
+    })
+    .ok_or_else(|| "signal not found".to_string())?;
+
+    let request = DeleteSignalRequest {
+        symbol,
+        period: input.period.clone(),
+        signal_type: input.signal_type.clone(),
+    };
+    post_json_unit(
+        &config,
+        "/api/open/watch-list/symbol-alert/delete-signal",
+        &request,
+    )
+    .await?;
+
     let snapshot = with_store(&state, |store| {
         if !store.delete_signal(&input) {
             return Err("signal not found".to_string());
@@ -667,15 +876,13 @@ fn delete_signal(
 }
 
 #[tauri::command]
-fn trigger_mock_signal(app: AppHandle, state: State<'_, SharedState>) -> RuntimeSnapshot {
-    let snapshot = with_store(&state, |store| {
-        store.cycle_signal();
-        store.main_visible = true;
-        store.snapshot()
-    });
+async fn trigger_mock_signal(
+    app: AppHandle,
+    state: State<'_, SharedState>,
+) -> Result<RuntimeSnapshot, String> {
+    let snapshot = refresh_runtime_from_api(&app, &state).await?;
     let _ = show_main_window(&app);
-    emit_snapshot(&app, snapshot.clone());
-    snapshot
+    Ok(snapshot)
 }
 
 #[tauri::command]
