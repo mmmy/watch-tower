@@ -645,7 +645,7 @@ fn apply_edge_mode(app: &AppHandle, enabled: bool, edge_width: f64) -> Result<()
             let _ = window.set_position(tauri::Position::Logical(LogicalPosition::new(x, y)));
         }
     } else {
-        let _ = window.set_size(tauri::Size::Logical(LogicalSize::new(760.0, 920.0)));
+        let _ = window.set_size(tauri::Size::Logical(LogicalSize::new(560.0, 760.0)));
         let _ = window.center();
     }
 
@@ -1005,7 +1005,7 @@ pub fn run() {
 
             if let Some(window) = app.get_webview_window(MAIN_WINDOW) {
                 let _ = window.set_title("Signal Desk Console");
-                let _ = window.set_size(tauri::Size::Logical(LogicalSize::new(760.0, 920.0)));
+                let _ = window.set_size(tauri::Size::Logical(LogicalSize::new(560.0, 760.0)));
                 let _ = window.center();
                 let _ = window.set_always_on_top(always_on_top);
             }
