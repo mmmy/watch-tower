@@ -2,7 +2,7 @@
 name = "tauri-app"
 version = "0.1.0"
 description = "Signal Desk proof-of-concept"
-authors = ["Codex"]
+authors = ["ynagqi"]
 edition = "2021"
 
 [lib]

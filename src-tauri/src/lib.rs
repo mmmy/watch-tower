@@ -300,11 +300,7 @@ fn load_config() -> AppConfig {
 
 fn resolve_config_path_for_write() -> PathBuf {
     for candidate in resolve_config_candidates() {
-        if candidate
-            .file_name()
-            .and_then(|value| value.to_str())
-            == Some("config.yaml")
-        {
+        if candidate.file_name().and_then(|value| value.to_str()) == Some("config.yaml") {
             return candidate;
         }
     }
@@ -570,16 +566,13 @@ fn toggle_main_window(app: &AppHandle, state: &SharedState) -> Result<(), String
 }
 
 fn toggle_widget_window(app: &AppHandle) -> Result<(), String> {
-    let window = app
-        .get_webview_window(WIDGET_WINDOW)
-        .ok_or_else(|| "widget window not found".to_string())?;
-
-    let is_visible = window_visible(&window);
-    if is_visible {
-        window.hide().map_err(|err| err.to_string())?;
+    if let Some(window) = app.get_webview_window(WIDGET_WINDOW) {
+        window.close().map_err(|err| err.to_string())?;
     } else {
-        window.show().map_err(|err| err.to_string())?;
-        let _ = window.set_focus();
+        ensure_widget_window(app).map_err(|err| err.to_string())?;
+        if let Some(window) = app.get_webview_window(WIDGET_WINDOW) {
+            let _ = window.set_focus();
+        }
     }
 
     Ok(())
@@ -985,7 +978,8 @@ fn save_config(state: State<'_, SharedState>) -> Result<RuntimeSnapshot, String>
     }
 
     let content = serde_yaml::to_string(&config).map_err(|err| err.to_string())?;
-    fs::write(&path, content).map_err(|err| format!("failed to write {}: {}", path.display(), err))?;
+    fs::write(&path, content)
+        .map_err(|err| format!("failed to write {}: {}", path.display(), err))?;
     Ok(snapshot)
 }
 
@@ -1017,7 +1011,6 @@ pub fn run() {
             quit_app
         ])
         .setup(|app| {
-            ensure_widget_window(&app.handle())?;
             build_tray(app)?;
 
             let (always_on_top, edge_mode, edge_width) =
