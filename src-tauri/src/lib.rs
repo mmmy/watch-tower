@@ -471,20 +471,14 @@ async fn fetch_runtime_signals(config: &AppConfig) -> Result<Vec<RuntimeSignal>,
             page_size: config.poll.page_size,
         };
 
-        let response: SignalListResponse = post_json(
-            config,
-            "/api/open/watch-list/symbol-signals",
-            &request,
-        )
-        .await?;
+        let response: SignalListResponse =
+            post_json(config, "/api/open/watch-list/symbol-signals", &request).await?;
 
         for item in response.data {
             for (signal_type, detail) in item.signals {
-                if let Some(index) = index_by_key.get(&(
-                    group.id.clone(),
-                    signal_type.clone(),
-                    item.period.clone(),
-                )) {
+                if let Some(index) =
+                    index_by_key.get(&(group.id.clone(), signal_type.clone(), item.period.clone()))
+                {
                     let signal = &mut signals[*index];
                     signal.symbol = item.symbol.clone();
                     signal.side = if detail.sd >= 0 { 1 } else { -1 };
@@ -576,7 +570,7 @@ fn position_widget(app: &AppHandle) {
         if let Ok(Some(monitor)) = window.current_monitor() {
             let size = monitor.size();
             let scale = monitor.scale_factor();
-            let width = 112.0;
+            let width = 52.0;
             let x = (size.width as f64 / scale) - width - 28.0;
             let y = 32.0;
             let _ = window.set_position(tauri::Position::Logical(LogicalPosition::new(x, y)));
@@ -595,9 +589,9 @@ fn ensure_widget_window(app: &AppHandle) -> tauri::Result<()> {
         WebviewUrl::App("index.html?view=widget".into()),
     )
     .title("Signal Desk Widget")
-    .inner_size(112.0, 112.0)
-    .min_inner_size(112.0, 112.0)
-    .max_inner_size(112.0, 112.0)
+    .inner_size(52.0, 52.0)
+    .min_inner_size(52.0, 52.0)
+    .max_inner_size(52.0, 52.0)
     .resizable(false)
     .decorations(false)
     .transparent(true)
@@ -669,8 +663,7 @@ fn restore_main_window_bounds(app: &AppHandle, bounds: WindowRestoreBounds) -> R
         .map_err(|err| err.to_string())?;
     window
         .set_position(tauri::Position::Physical(tauri::PhysicalPosition::new(
-            bounds.x,
-            bounds.y,
+            bounds.x, bounds.y,
         )))
         .map_err(|err| err.to_string())?;
     Ok(())
@@ -729,7 +722,10 @@ fn handle_menu_event(app: &AppHandle, event: MenuEvent) {
             let app_handle = app.clone();
             let shared_state = state.inner().clone();
             spawn(async move {
-                if refresh_runtime_from_api(&app_handle, &shared_state).await.is_ok() {
+                if refresh_runtime_from_api(&app_handle, &shared_state)
+                    .await
+                    .is_ok()
+                {
                     let _ = show_main_window(&app_handle);
                 }
             });
@@ -759,7 +755,13 @@ fn spawn_runtime_loop(app: AppHandle) {
         loop {
             let interval_secs = app
                 .try_state::<SharedState>()
-                .and_then(|state| state.0.lock().ok().map(|guard| guard.config.poll.interval_secs))
+                .and_then(|state| {
+                    state
+                        .0
+                        .lock()
+                        .ok()
+                        .map(|guard| guard.config.poll.interval_secs)
+                })
                 .unwrap_or(60)
                 .clamp(12, 600);
 
@@ -977,13 +979,17 @@ pub fn run() {
             ensure_widget_window(&app.handle())?;
             build_tray(app)?;
 
-            let (always_on_top, edge_mode, edge_width) = if let Some(state) = app.try_state::<SharedState>()
-            {
-                let guard = state.0.lock().expect("runtime store poisoned");
-                (guard.always_on_top, guard.edge_mode, guard.config.ui.edge_width)
-            } else {
-                (true, false, 120.0)
-            };
+            let (always_on_top, edge_mode, edge_width) =
+                if let Some(state) = app.try_state::<SharedState>() {
+                    let guard = state.0.lock().expect("runtime store poisoned");
+                    (
+                        guard.always_on_top,
+                        guard.edge_mode,
+                        guard.config.ui.edge_width,
+                    )
+                } else {
+                    (true, false, 120.0)
+                };
 
             if let Some(window) = app.get_webview_window(MAIN_WINDOW) {
                 let _ = window.set_title("Signal Desk Console");

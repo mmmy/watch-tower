@@ -342,18 +342,14 @@ button:focus-visible {
     position: relative;
     display: grid;
     place-items: center;
-    width: 96px;
-    height: 96px;
-    border: none;
+    width: 48px;
+    height: 48px;
+    border: 2px solid rgba(255, 255, 255, 0.95);
     border-radius: 50%;
     padding: 0;
     overflow: hidden;
-    background: radial-gradient(
-        circle at 30% 30%,
-        rgba(170, 255, 228, 0.9),
-        rgba(8, 24, 35, 0.96) 62%
-    );
-    box-shadow: 0 18px 55px rgba(0, 0, 0, 0.34);
+    background: #163846;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.14);
     cursor: grab;
     transition:
         transform 180ms ease,
@@ -388,69 +384,28 @@ button:focus-visible {
 }
 
 .widget-orb.is-hot {
-    animation: widgetPulse 2.2s ease-in-out infinite;
+    animation: none;
 }
 
 .widget-orb.is-calm {
-    background: radial-gradient(
-        circle at 30% 30%,
-        rgba(204, 233, 230, 0.88),
-        rgba(10, 23, 32, 0.94) 64%
-    );
+    background: #28424c;
 }
 
 .widget-glow {
     position: absolute;
-    inset: 7px;
+    inset: 3px;
     border-radius: 50%;
-    border: 1px solid rgba(255, 255, 255, 0.22);
+    border: 1px solid rgba(255, 255, 255, 0.14);
 }
 
 .widget-count {
     position: relative;
     z-index: 1;
     display: block;
-    margin-top: -8px;
-    font-size: 2rem;
+    margin-top: 0;
+    font-size: 1.05rem;
     font-weight: 700;
-    color: #041018;
-}
-
-.widget-label,
-.widget-subline {
-    position: relative;
-    z-index: 1;
-    color: #041018;
-}
-
-.widget-label {
-    display: block;
-    margin-top: -2px;
-    font-size: 0.68rem;
-    font-weight: 700;
-    letter-spacing: 0.16em;
-}
-
-.widget-subline {
-    max-width: 68px;
-    margin-top: 4px;
-    font-size: 0.58rem;
-    line-height: 1.25;
-    text-align: center;
-}
-
-@keyframes widgetPulse {
-    0%,
-    100% {
-        transform: scale(1);
-        box-shadow: 0 18px 55px rgba(0, 0, 0, 0.34);
-    }
-    50% {
-        transform: scale(1.04);
-        box-shadow:
-            0 18px 55px rgba(0, 0, 0, 0.34),
-            0 0 0 12px rgba(122, 240, 191, 0.16);
-    }
+    color: #ffffff;
 }
 
 @media (max-width: 1200px) {

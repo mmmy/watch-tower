@@ -260,10 +260,6 @@ function hideWidgetPlacement(
 }
 
 function WidgetView({ snapshot }: { snapshot: RuntimeSnapshot | null }) {
-  const latestUnread = useMemo(
-    () => snapshot?.signals.find((signal) => signal.unread && !signal.deleted) ?? null,
-    [snapshot],
-  );
   const hideTimerRef = useRef<number | null>(null);
   const draggingWindowRef = useRef(false);
   const currentPlacementRef = useRef<WidgetPlacement | null>(null);
@@ -623,10 +619,6 @@ function WidgetView({ snapshot }: { snapshot: RuntimeSnapshot | null }) {
         >
           <div className="widget-drag-layer" aria-hidden="true">
             <span className="widget-count">{snapshot?.unread_count ?? 0}</span>
-            <span className="widget-label">{snapshot && snapshot.unread_count > 0 ? "UNREAD" : "CLEAR"}</span>
-            <span className="widget-subline">
-              {latestUnread ? `${latestUnread.symbol} · ${latestUnread.period}` : "System online"}
-            </span>
           </div>
         </div>
       </div>
