@@ -160,14 +160,6 @@ struct ReadStatusRequest {
     read: bool,
 }
 
-#[derive(Debug, Serialize)]
-struct DeleteSignalRequest {
-    symbol: String,
-    period: String,
-    #[serde(rename = "signalType")]
-    signal_type: String,
-}
-
 #[derive(Debug, Deserialize)]
 struct SignalListResponse {
     #[serde(default)]
@@ -382,23 +374,6 @@ impl RuntimeStore {
         false
     }
 
-    fn delete_signal(&mut self, input: &SignalMutationInput) -> bool {
-        if let Some(signal) = self.signals.iter_mut().find(|signal| {
-            !signal.deleted
-                && signal.group_id == input.group_id
-                && signal.signal_type == input.signal_type
-                && signal.period == input.period
-        }) {
-            signal.deleted = true;
-            signal.unread = false;
-            self.last_updated_at = now_ms();
-            self.recompute_unread();
-            return true;
-        }
-
-        false
-    }
-
     fn apply_remote_signals(&mut self, signals: Vec<RuntimeSignal>) {
         self.signals = signals;
         self.last_tick += 1;
@@ -580,6 +555,22 @@ fn toggle_main_window(app: &AppHandle, state: &SharedState) -> Result<(), String
     Ok(())
 }
 
+fn toggle_widget_window(app: &AppHandle) -> Result<(), String> {
+    let window = app
+        .get_webview_window(WIDGET_WINDOW)
+        .ok_or_else(|| "widget window not found".to_string())?;
+
+    let is_visible = window_visible(&window);
+    if is_visible {
+        window.hide().map_err(|err| err.to_string())?;
+    } else {
+        window.show().map_err(|err| err.to_string())?;
+        let _ = window.set_focus();
+    }
+
+    Ok(())
+}
+
 fn position_widget(app: &AppHandle) {
     if let Some(window) = app.get_webview_window(WIDGET_WINDOW) {
         if let Ok(Some(monitor)) = window.current_monitor() {
@@ -687,13 +678,15 @@ fn restore_main_window_bounds(app: &AppHandle, bounds: WindowRestoreBounds) -> R
 
 fn build_tray(app: &App) -> tauri::Result<()> {
     let toggle_main = MenuItemBuilder::with_id("toggle_main", "Toggle Main Window").build(app)?;
-    let simulate_signal = MenuItemBuilder::with_id("simulate_signal", "Simulate Signal").build(app)?;
+    let toggle_widget = MenuItemBuilder::with_id("toggle_widget", "Toggle Widget").build(app)?;
+    let refresh_now = MenuItemBuilder::with_id("refresh_now", "Refresh Now").build(app)?;
     let toggle_pin = MenuItemBuilder::with_id("toggle_pin", "Toggle Pin").build(app)?;
     let quit = MenuItemBuilder::with_id("quit", "Quit").build(app)?;
 
     let menu = MenuBuilder::new(app)
         .item(&toggle_main)
-        .item(&simulate_signal)
+        .item(&toggle_widget)
+        .item(&refresh_now)
         .item(&toggle_pin)
         .separator()
         .item(&quit)
@@ -729,7 +722,10 @@ fn handle_menu_event(app: &AppHandle, event: MenuEvent) {
         "toggle_main" => {
             let _ = toggle_main_window(app, &state);
         }
-        "simulate_signal" => {
+        "toggle_widget" => {
+            let _ = toggle_widget_window(app);
+        }
+        "refresh_now" => {
             let app_handle = app.clone();
             let shared_state = state.inner().clone();
             spawn(async move {
@@ -833,50 +829,7 @@ async fn mark_signal_read(
 }
 
 #[tauri::command]
-async fn delete_signal(
-    app: AppHandle,
-    state: State<'_, SharedState>,
-    input: SignalMutationInput,
-) -> Result<RuntimeSnapshot, String> {
-    let (config, symbol) = with_store(&state, |store| {
-        let signal = store
-            .signals
-            .iter()
-            .find(|signal| {
-                !signal.deleted
-                    && signal.group_id == input.group_id
-                    && signal.signal_type == input.signal_type
-                    && signal.period == input.period
-            })
-            .cloned();
-        signal.map(|signal| (store.config.clone(), signal.symbol))
-    })
-    .ok_or_else(|| "signal not found".to_string())?;
-
-    let request = DeleteSignalRequest {
-        symbol,
-        period: input.period.clone(),
-        signal_type: input.signal_type.clone(),
-    };
-    post_json_unit(
-        &config,
-        "/api/open/watch-list/symbol-alert/delete-signal",
-        &request,
-    )
-    .await?;
-
-    let snapshot = with_store(&state, |store| {
-        if !store.delete_signal(&input) {
-            return Err("signal not found".to_string());
-        }
-        Ok(store.snapshot())
-    })?;
-    emit_snapshot(&app, snapshot.clone());
-    Ok(snapshot)
-}
-
-#[tauri::command]
-async fn trigger_mock_signal(
+async fn refresh_signals(
     app: AppHandle,
     state: State<'_, SharedState>,
 ) -> Result<RuntimeSnapshot, String> {
@@ -1011,8 +964,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             get_runtime_snapshot,
             mark_signal_read,
-            delete_signal,
-            trigger_mock_signal,
+            refresh_signals,
             toggle_main,
             set_always_on_top,
             set_edge_mode,

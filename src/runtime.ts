@@ -12,12 +12,8 @@ export function markSignalRead(input: SignalMutationInput, read: boolean) {
   return invoke<RuntimeSnapshot>("mark_signal_read", { input, read });
 }
 
-export function deleteSignal(input: SignalMutationInput) {
-  return invoke<RuntimeSnapshot>("delete_signal", { input });
-}
-
-export function triggerMockSignal() {
-  return invoke<RuntimeSnapshot>("trigger_mock_signal");
+export function refreshSignals() {
+  return invoke<RuntimeSnapshot>("refresh_signals");
 }
 
 export function toggleMain() {

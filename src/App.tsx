@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import "./App.css";
+import { Menu, MenuItem } from "@tauri-apps/api/menu";
 import { PhysicalPosition, currentMonitor, getCurrentWindow, monitorFromPoint } from "@tauri-apps/api/window";
 import {
   getRuntimeSnapshot,
   markSignalRead,
   quitApp,
+  refreshSignals,
   setAlwaysOnTop,
   setEdgeMode,
   setEdgeWidth,
@@ -12,7 +14,6 @@ import {
   setSound,
   subscribeRuntime,
   toggleMain,
-  triggerMockSignal,
 } from "./runtime";
 import type { RuntimeSignal, RuntimeSnapshot, SignalMutationInput, WatchGroup } from "./types";
 
@@ -31,6 +32,7 @@ const WIDGET_EDGE_THRESHOLD = 56;
 const WIDGET_PEEK = 24;
 const WIDGET_VISIBLE_MARGIN = 12;
 const WIDGET_AUTO_HIDE_DELAY = 520;
+const WIDGET_DRAG_THRESHOLD = 8;
 
 function detectViewMode(): ViewMode {
   const params = new URLSearchParams(window.location.search);
@@ -267,10 +269,14 @@ function WidgetView({ snapshot }: { snapshot: RuntimeSnapshot | null }) {
   const currentPlacementRef = useRef<WidgetPlacement | null>(null);
   const animationFrameRef = useRef<number | null>(null);
   const animationTokenRef = useRef(0);
-  const suppressClickRef = useRef(false);
   const moveDebounceRef = useRef<number | null>(null);
   const programmaticMoveRef = useRef(false);
-  const [menuOpen, setMenuOpen] = useState(false);
+  const pointerGestureRef = useRef<{
+    pointerId: number;
+    startClientX: number;
+    startClientY: number;
+    dragTriggered: boolean;
+  } | null>(null);
 
   useEffect(() => {
     document.documentElement.dataset.view = "widget";
@@ -286,7 +292,6 @@ function WidgetView({ snapshot }: { snapshot: RuntimeSnapshot | null }) {
       }
 
       draggingWindowRef.current = true;
-      suppressClickRef.current = true;
       cancelHideTimer();
 
       if (moveDebounceRef.current) {
@@ -297,9 +302,6 @@ function WidgetView({ snapshot }: { snapshot: RuntimeSnapshot | null }) {
         moveDebounceRef.current = null;
         draggingWindowRef.current = false;
         void snapAndPersistWidgetPosition();
-        window.setTimeout(() => {
-          suppressClickRef.current = false;
-        }, 160);
       }, 140);
     }).then((unlisten) => {
       unlistenMoved = unlisten;
@@ -322,19 +324,18 @@ function WidgetView({ snapshot }: { snapshot: RuntimeSnapshot | null }) {
   }, []);
 
   useEffect(() => {
-    if (!menuOpen) {
-      return;
+    function clearGesture() {
+      pointerGestureRef.current = null;
     }
 
-    function onKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        setMenuOpen(false);
-      }
-    }
+    window.addEventListener("pointerup", clearGesture);
+    window.addEventListener("pointercancel", clearGesture);
 
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [menuOpen]);
+    return () => {
+      window.removeEventListener("pointerup", clearGesture);
+      window.removeEventListener("pointercancel", clearGesture);
+    };
+  }, []);
 
   async function resolveWidgetGeometry() {
     const appWindow = getCurrentWindow();
@@ -486,25 +487,61 @@ function WidgetView({ snapshot }: { snapshot: RuntimeSnapshot | null }) {
     }
   }
 
-  async function handleDragMouseDown(event: React.MouseEvent<HTMLDivElement>) {
-    if (event.button !== 0 || menuOpen || draggingWindowRef.current) {
+  async function handleWidgetPointerDown(event: React.PointerEvent<HTMLDivElement>) {
+    if (event.button !== 0 || draggingWindowRef.current || pointerGestureRef.current) {
       return;
     }
 
-    setMenuOpen(false);
     cancelHideTimer();
-    suppressClickRef.current = true;
+    pointerGestureRef.current = {
+      pointerId: event.pointerId,
+      startClientX: event.clientX,
+      startClientY: event.clientY,
+      dragTriggered: false,
+    };
+    event.currentTarget.setPointerCapture(event.pointerId);
+  }
+
+  async function handleWidgetPointerMove(event: React.PointerEvent<HTMLDivElement>) {
+    const gesture = pointerGestureRef.current;
+    if (!gesture || gesture.pointerId !== event.pointerId || gesture.dragTriggered) {
+      return;
+    }
+
+    const deltaX = event.clientX - gesture.startClientX;
+    const deltaY = event.clientY - gesture.startClientY;
+    const distance = Math.hypot(deltaX, deltaY);
+
+    if (distance < WIDGET_DRAG_THRESHOLD) {
+      return;
+    }
+
+    gesture.dragTriggered = true;
+    draggingWindowRef.current = true;
+    cancelHideTimer();
 
     try {
       await getCurrentWindow().startDragging();
     } catch (error) {
       console.error("startDragging failed", error);
-    } finally {
-      window.setTimeout(() => {
-        if (!draggingWindowRef.current) {
-          suppressClickRef.current = false;
-        }
-      }, 160);
+      draggingWindowRef.current = false;
+      pointerGestureRef.current = null;
+    }
+  }
+
+  async function finishWidgetPointer(event: React.PointerEvent<HTMLDivElement>) {
+    const gesture = pointerGestureRef.current;
+    if (!gesture || gesture.pointerId !== event.pointerId) {
+      return;
+    }
+
+    pointerGestureRef.current = null;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+
+    if (!gesture.dragTriggered) {
+      await toggleMain();
     }
   }
 
@@ -514,7 +551,7 @@ function WidgetView({ snapshot }: { snapshot: RuntimeSnapshot | null }) {
   }
 
   function handlePointerLeave() {
-    if (menuOpen) {
+    if (draggingWindowRef.current || pointerGestureRef.current) {
       return;
     }
 
@@ -525,42 +562,64 @@ function WidgetView({ snapshot }: { snapshot: RuntimeSnapshot | null }) {
     }, WIDGET_AUTO_HIDE_DELAY);
   }
 
-  async function handleWidgetClick() {
-    if (draggingWindowRef.current || suppressClickRef.current) {
-      return;
-    }
-
-    await toggleMain();
-  }
-
   async function handleContextMenu(event: React.MouseEvent<HTMLDivElement>) {
     event.preventDefault();
     cancelHideTimer();
     await revealDockedWidget();
-    setMenuOpen((value) => !value);
-  }
 
-  async function runWidgetMenuAction(action: () => Promise<void>) {
-    setMenuOpen(false);
-    await action();
+    const items = await Promise.all([
+      MenuItem.new({
+        id: "toggle-main",
+        text: "打开主窗",
+        action: () => {
+          void toggleMain();
+        },
+      }),
+      MenuItem.new({
+        id: "refresh-now",
+        text: "立即刷新",
+        action: () => {
+          void refreshSignals();
+        },
+      }),
+      MenuItem.new({
+        id: "toggle-pin",
+        text: snapshot?.always_on_top ? "取消置顶" : "窗口置顶",
+        action: () => {
+          if (!snapshot) {
+            return;
+          }
+          void setAlwaysOnTop(!snapshot.always_on_top);
+        },
+      }),
+      MenuItem.new({
+        id: "quit-app",
+        text: "退出应用",
+        action: () => {
+          void quitApp();
+        },
+      }),
+    ]);
+
+    const menu = await Menu.new({ items });
+    await menu.popup(undefined, getCurrentWindow());
   }
 
   return (
-    <div
-      className={`widget-shell ${menuOpen ? "menu-open" : ""}`}
-      onContextMenu={(event) => event.preventDefault()}
-    >
+    <div className="widget-shell" onContextMenu={(event) => event.preventDefault()}>
       <div
-        className={`widget-orb ${snapshot && snapshot.unread_count > 0 ? "is-hot" : "is-calm"} ${menuOpen ? "menu-expanded" : ""}`}
+        className={`widget-orb ${snapshot && snapshot.unread_count > 0 ? "is-hot" : "is-calm"}`}
         onContextMenu={(event) => void handleContextMenu(event)}
         onPointerEnter={handlePointerEnter}
         onPointerLeave={handlePointerLeave}
       >
         <span className="widget-glow" />
         <div
-          data-tauri-drag-region
           className="widget-drag-hit-area"
-          onMouseDown={(event) => void handleDragMouseDown(event)}
+          onPointerCancel={(event) => void finishWidgetPointer(event)}
+          onPointerDown={(event) => void handleWidgetPointerDown(event)}
+          onPointerMove={(event) => void handleWidgetPointerMove(event)}
+          onPointerUp={(event) => void finishWidgetPointer(event)}
         >
           <div className="widget-drag-layer" aria-hidden="true">
             <span className="widget-count">{snapshot?.unread_count ?? 0}</span>
@@ -570,52 +629,7 @@ function WidgetView({ snapshot }: { snapshot: RuntimeSnapshot | null }) {
             </span>
           </div>
         </div>
-        <button
-          type="button"
-          className="widget-launch-button"
-          onClick={() => void handleWidgetClick()}
-          onMouseDown={(event) => {
-            event.stopPropagation();
-          }}
-          title="打开主窗口"
-          aria-label="打开主窗口"
-        >
-          Open
-        </button>
       </div>
-      {menuOpen ? (
-        <div className="widget-menu-backdrop" onClick={() => setMenuOpen(false)} role="presentation">
-          <div className="widget-menu" onClick={(event) => event.stopPropagation()} role="menu">
-            <button type="button" className="widget-menu-item" onClick={() => void runWidgetMenuAction(toggleMain)}>
-              打开主窗
-            </button>
-            <button
-              type="button"
-              className="widget-menu-item"
-              onClick={() => void runWidgetMenuAction(async () => void triggerMockSignal())}
-            >
-              模拟信号
-            </button>
-            <button
-              type="button"
-              className="widget-menu-item"
-              onClick={() =>
-                void runWidgetMenuAction(async () => {
-                  if (!snapshot) {
-                    return;
-                  }
-                  await setAlwaysOnTop(!snapshot.always_on_top);
-                })
-              }
-            >
-              {snapshot?.always_on_top ? "取消置顶" : "窗口置顶"}
-            </button>
-            <button type="button" className="widget-menu-item danger" onClick={() => void runWidgetMenuAction(quitApp)}>
-              退出应用
-            </button>
-          </div>
-        </div>
-      ) : null}
     </div>
   );
 }
@@ -920,7 +934,7 @@ function MainView({ snapshot, setSnapshot }: { snapshot: RuntimeSnapshot; setSna
               onPointerDown={(event) => event.stopPropagation()}
               role="menu"
             >
-              <button onClick={() => void triggerMockSignal().then(setSnapshot).finally(() => setMoreOpen(false))} type="button">
+              <button onClick={() => void refreshSignals().then(setSnapshot).finally(() => setMoreOpen(false))} type="button">
                 立即轮询
               </button>
               <label className="toolbar-menu-field">

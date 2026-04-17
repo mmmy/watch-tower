@@ -106,18 +106,6 @@ button:focus-visible {
     margin: 0;
 }
 
-.toolbar-text {
-    color: #666;
-    white-space: nowrap;
-}
-
-.toolbar-field {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    white-space: nowrap;
-}
-
 .toolbar-number {
     width: 54px;
     min-height: 22px;
@@ -396,35 +384,7 @@ button:focus-visible {
 
 .widget-drag-layer,
 .widget-drag-layer * {
-    pointer-events: none;
-}
-
-.widget-launch-button {
-    position: absolute;
-    right: 10px;
-    bottom: 10px;
-    z-index: 3;
-    min-width: 34px;
-    height: 34px;
-    padding: 0 10px;
-    border-radius: 999px;
-    border: 1px solid rgba(255, 255, 255, 0.18);
-    background: rgba(7, 19, 28, 0.82);
-    color: #eef9f6;
-    font-size: 0.62rem;
-    font-weight: 700;
-    letter-spacing: 0.06em;
-    box-shadow: 0 10px 22px rgba(0, 0, 0, 0.22);
-}
-
-.widget-launch-button:hover {
-    transform: translateY(-1px);
-    border-color: rgba(141, 240, 208, 0.4);
-}
-
-.widget-launch-button:focus-visible {
-    outline: 2px solid rgba(255, 255, 255, 0.7);
-    outline-offset: 2px;
+  pointer-events: none;
 }
 
 .widget-orb.is-hot {
@@ -437,12 +397,6 @@ button:focus-visible {
         rgba(204, 233, 230, 0.88),
         rgba(10, 23, 32, 0.94) 64%
     );
-}
-
-.widget-orb.menu-expanded {
-    opacity: 0.18;
-    transform: scale(0.92);
-    filter: blur(2px);
 }
 
 .widget-glow {
@@ -483,87 +437,6 @@ button:focus-visible {
     font-size: 0.58rem;
     line-height: 1.25;
     text-align: center;
-}
-
-.widget-menu-backdrop {
-    position: absolute;
-    inset: 0;
-    display: grid;
-    place-items: center;
-    background: radial-gradient(
-        circle,
-        rgba(5, 12, 18, 0.2),
-        rgba(5, 12, 18, 0.56)
-    );
-    animation: widgetMenuFade 140ms ease;
-}
-
-.widget-menu {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 8px;
-    width: 108px;
-    padding: 8px;
-    border-radius: 24px;
-    border: 1px solid rgba(141, 240, 208, 0.2);
-    background: linear-gradient(
-        180deg,
-        rgba(8, 22, 32, 0.96),
-        rgba(3, 10, 16, 0.98)
-    );
-    box-shadow: 0 22px 50px rgba(0, 0, 0, 0.38);
-    backdrop-filter: blur(12px);
-    animation: widgetMenuPop 160ms ease;
-}
-
-.widget-menu-item {
-    min-height: 42px;
-    padding: 0.5rem 0.4rem;
-    border-radius: 18px;
-    border: 1px solid rgba(141, 240, 208, 0.16);
-    background: linear-gradient(
-        180deg,
-        rgba(13, 43, 52, 0.9),
-        rgba(7, 19, 28, 0.96)
-    );
-    color: #eef9f6;
-    font-size: 0.68rem;
-    line-height: 1.15;
-    text-align: center;
-    box-shadow: none;
-}
-
-.widget-menu-item:hover {
-    transform: translateY(-1px) scale(1.01);
-}
-
-.widget-menu-item.danger {
-    border-color: rgba(255, 132, 132, 0.24);
-    background: linear-gradient(
-        180deg,
-        rgba(87, 28, 28, 0.92),
-        rgba(38, 10, 14, 0.96)
-    );
-}
-
-@keyframes widgetMenuFade {
-    from {
-        opacity: 0;
-    }
-    to {
-        opacity: 1;
-    }
-}
-
-@keyframes widgetMenuPop {
-    from {
-        opacity: 0;
-        transform: scale(0.9);
-    }
-    to {
-        opacity: 1;
-        transform: scale(1);
-    }
 }
 
 @keyframes widgetPulse {

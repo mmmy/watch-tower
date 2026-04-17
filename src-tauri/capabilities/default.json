@@ -5,6 +5,7 @@
   "windows": ["main", "widget"],
   "permissions": [
     "core:default",
+    "core:menu:default",
     "core:window:default",
     "core:window:allow-start-dragging",
     "opener:default"
