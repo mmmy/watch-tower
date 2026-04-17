@@ -1,0 +1,41 @@
+# Local configuration
+config.yaml
+*.local
+.env
+.env.*
+!.env.example
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Frontend build output
+node_modules/
+dist/
+dist-ssr/
+
+# Rust / Tauri build output
+src-tauri/target/
+src-tauri/gen/schemas/
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+Thumbs.db
+*.suo
+*.user
+*.userossc
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+package-lock.json
+.vscode
+Cargo.lock
