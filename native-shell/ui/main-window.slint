@@ -1,0 +1,525 @@
+import { Button, HorizontalBox, ListView, ScrollView, VerticalBox } from "std-widgets.slint";
+
+export struct SignalRowData {
+    title: string,
+    meta: string,
+    is_header: bool,
+    unread: bool,
+    pending: bool,
+}
+
+export component MainWindow inherits Window {
+    title: "Signal Desk Native";
+    preferred-width: 560px;
+    preferred-height: 760px;
+    min-width: 380px;
+    min-height: 520px;
+    background: #0f172a;
+
+    in-out property <int> unread-count: 0;
+    in-out property <string> status-text: "Ready";
+    in-out property <string> refresh-label: "No refresh action yet";
+    in-out property <string> runtime-summary: "Runtime not connected";
+    in-out property <string> stats-primary: "0 enabled group(s)";
+    in-out property <string> stats-secondary: "0 section(s)";
+    in-out property <string> stats-tertiary: "Tick 0 @ 0s poll";
+    in-out property <string> stats-quaternary: "Updated n/a";
+    in-out property <[SignalRowData]> signal-rows: [];
+    in-out property <bool> main-visible: true;
+    in-out property <bool> widget-visible: true;
+
+    callback toggle-widget();
+    callback refresh-data();
+    callback hide-main();
+    callback activate-signal(int);
+
+    VerticalBox {
+        padding: 20px;
+        spacing: 16px;
+
+        Rectangle {
+            height: 138px;
+            border-radius: 18px;
+            background: #111827;
+
+                VerticalLayout {
+                    padding: 18px;
+                    spacing: 10px;
+
+                    Text {
+                        text: "Signal Desk";
+                        color: #f8fafc;
+                        font-size: 28px;
+                        font-weight: 700;
+                    }
+
+                    Text {
+                        text: root.status-text;
+                        color: #cbd5e1;
+                        font-size: 15px;
+                    }
+
+                    HorizontalBox {
+                        spacing: 12px;
+
+                        Rectangle {
+                            border-radius: 999px;
+                            background: #1d4ed8;
+                            min-width: 120px;
+                            min-height: 40px;
+
+                            HorizontalLayout {
+                                padding-left: 14px;
+                                padding-right: 14px;
+                                alignment: center;
+
+                                Text {
+                                    text: "Unread " + root.unread-count;
+                                    color: #eff6ff;
+                                    font-size: 16px;
+                                    font-weight: 600;
+                                }
+                            }
+                        }
+
+                        Rectangle {
+                            border-radius: 999px;
+                            background: root.widget-visible ? #14532d : #3f3f46;
+                            min-width: 150px;
+                            min-height: 40px;
+
+                            HorizontalLayout {
+                                padding-left: 14px;
+                                padding-right: 14px;
+                                alignment: center;
+
+                                Text {
+                                    text: root.widget-visible ? "Widget visible" : "Widget hidden";
+                                    color: #f8fafc;
+                                    font-size: 15px;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+        Rectangle {
+            border-radius: 18px;
+            background: #111827;
+
+                VerticalLayout {
+                    padding: 18px;
+                    spacing: 14px;
+
+                    Text {
+                        text: "Architecture Spike";
+                        color: #f8fafc;
+                        font-size: 20px;
+                        font-weight: 600;
+                    }
+
+                    Text {
+                        text: root.refresh-label;
+                        color: #94a3b8;
+                        font-size: 14px;
+                        wrap: word-wrap;
+                    }
+
+                    Text {
+                        text: root.runtime-summary;
+                        color: #cbd5e1;
+                        wrap: word-wrap;
+                        font-size: 14px;
+                    }
+
+                    HorizontalBox {
+                        spacing: 12px;
+
+                        Button {
+                            text: "Refresh Signals";
+                            clicked => {
+                                root.refresh-data();
+                            }
+                        }
+
+                        Button {
+                            text: root.widget-visible ? "Hide Widget" : "Show Widget";
+                            clicked => {
+                                root.toggle-widget();
+                            }
+                        }
+
+                        Button {
+                            text: "Hide Main";
+                            clicked => {
+                                root.hide-main();
+                            }
+                        }
+                    }
+                }
+            }
+
+        ScrollView {
+            vertical-scrollbar-policy: ScrollBarPolicy.as-needed;
+            horizontal-scrollbar-policy: ScrollBarPolicy.as-needed;
+
+            VerticalBox {
+                spacing: 16px;
+
+                Rectangle {
+                    border-radius: 18px;
+                    background: #111827;
+
+                    VerticalLayout {
+                        padding: 18px;
+                        spacing: 10px;
+
+                        Text {
+                            text: "Runtime Stats";
+                            color: #f8fafc;
+                            font-size: 18px;
+                            font-weight: 600;
+                        }
+
+                        HorizontalBox {
+                            spacing: 12px;
+
+                            Rectangle {
+                                min-width: 112px;
+                                height: 72px;
+                                border-radius: 14px;
+                                background: #172033;
+
+                            VerticalLayout {
+                                padding: 12px;
+                                spacing: 4px;
+
+                                Text {
+                                    text: "Groups";
+                                    color: #94a3b8;
+                                    font-size: 11px;
+                                    font-weight: 600;
+                                }
+
+                                Text {
+                                    text: root.stats-primary;
+                                    color: #f8fafc;
+                                    font-size: 14px;
+                                    wrap: word-wrap;
+                                }
+                            }
+                        }
+
+                            Rectangle {
+                                min-width: 112px;
+                                height: 72px;
+                                border-radius: 14px;
+                                background: #172033;
+
+                            VerticalLayout {
+                                padding: 12px;
+                                spacing: 4px;
+
+                                Text {
+                                    text: "Sections";
+                                    color: #94a3b8;
+                                    font-size: 11px;
+                                    font-weight: 600;
+                                }
+
+                                Text {
+                                    text: root.stats-secondary;
+                                    color: #f8fafc;
+                                    font-size: 14px;
+                                    wrap: word-wrap;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                        HorizontalBox {
+                            spacing: 12px;
+
+                            Rectangle {
+                                min-width: 112px;
+                                height: 72px;
+                                border-radius: 14px;
+                                background: #172033;
+
+                            VerticalLayout {
+                                padding: 12px;
+                                spacing: 4px;
+
+                                Text {
+                                    text: "Polling";
+                                    color: #94a3b8;
+                                    font-size: 11px;
+                                    font-weight: 600;
+                                }
+
+                                Text {
+                                    text: root.stats-tertiary;
+                                    color: #f8fafc;
+                                    font-size: 14px;
+                                    wrap: word-wrap;
+                                }
+                            }
+                        }
+
+                            Rectangle {
+                                min-width: 112px;
+                                height: 72px;
+                                border-radius: 14px;
+                                background: #172033;
+
+                            VerticalLayout {
+                                padding: 12px;
+                                spacing: 4px;
+
+                                Text {
+                                    text: "Last Update";
+                                    color: #94a3b8;
+                                    font-size: 11px;
+                                    font-weight: 600;
+                                }
+
+                                Text {
+                                    text: root.stats-quaternary;
+                                    color: #f8fafc;
+                                    font-size: 14px;
+                                    wrap: word-wrap;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                        Text {
+                            text: "Quick Actions";
+                            color: #94a3b8;
+                            font-size: 11px;
+                            font-weight: 700;
+                        }
+
+                        HorizontalBox {
+                            spacing: 12px;
+
+                            Button {
+                                text: "Refresh Now";
+                                clicked => {
+                                    root.refresh-data();
+                                }
+                            }
+
+                            Button {
+                                text: root.widget-visible ? "Hide Widget" : "Show Widget";
+                                clicked => {
+                                    root.toggle-widget();
+                                }
+                            }
+
+                            Button {
+                                text: "Hide Main";
+                                clicked => {
+                                    root.hide-main();
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Rectangle {
+                    border-radius: 18px;
+                    background: #111827;
+
+                    VerticalLayout {
+                        padding: 18px;
+                        spacing: 10px;
+
+                        Text {
+                            text: "Live Signals";
+                            color: #f8fafc;
+                            font-size: 18px;
+                            font-weight: 600;
+                        }
+
+                        Text {
+                            text: root.signal-rows.length + " signal row(s)";
+                            color: #94a3b8;
+                            font-size: 13px;
+                        }
+
+                        ListView {
+                            height: 260px;
+
+                            for signal-row[index] in root.signal-rows : Rectangle {
+                                height: signal-row.is_header ? 42px : 54px;
+                                background: signal-row.is_header
+                                    ? (Math.mod(index, 2) == 0 ? #0b1220 : #101826)
+                                    : signal-row.pending
+                                    ? #374151
+                                    : signal-row.unread
+                                    ? (Math.mod(index, 2) == 0 ? #17305f : #1d4ed8)
+                                    : (Math.mod(index, 2) == 0 ? #172033 : #111827);
+                                border-radius: signal-row.is_header ? 10px : 12px;
+                                border-width: signal-row.is_header ? 0px : (signal-row.pending || signal-row.unread ? 1px : 0px);
+                                border-color: signal-row.pending ? #d1d5db : (signal-row.unread ? #93c5fd : transparent);
+
+                            TouchArea {
+                                clicked => {
+                                    if (!signal-row.is_header && signal-row.unread && !signal-row.pending) {
+                                        root.activate-signal(index);
+                                    }
+                                }
+                            }
+
+                            Rectangle {
+                                x: 12px;
+                                y: 18px;
+                                width: 8px;
+                                height: 8px;
+                                border-radius: 4px;
+                                background: signal-row.is_header
+                                    ? #60a5fa
+                                    : (signal-row.pending ? #e5e7eb : (signal-row.unread ? #facc15 : #475569));
+                            }
+
+                            Text {
+                                x: 28px;
+                                y: signal-row.is_header ? 9px : 8px;
+                                width: parent.width - 40px;
+                                text: signal-row.title;
+                                color: signal-row.is_header
+                                    ? #bfdbfe
+                                    : (signal-row.pending ? #f9fafb : (signal-row.unread ? #f8fafc : #cbd5e1));
+                                font-size: signal-row.is_header ? 12px : 13px;
+                                font-weight: signal-row.is_header ? 700 : (signal-row.pending || signal-row.unread ? 650 : 500);
+                                overflow: elide;
+                            }
+
+                            Text {
+                                x: 28px;
+                                y: signal-row.is_header ? 22px : 29px;
+                                width: signal-row.is_header ? parent.width - 40px : parent.width - 40px;
+                                text: signal-row.meta;
+                                color: signal-row.is_header
+                                    ? #60a5fa
+                                    : (signal-row.pending ? #e5e7eb : (signal-row.unread ? #dbeafe : #64748b));
+                                font-size: signal-row.is_header ? 10px : 11px;
+                                overflow: elide;
+                            }
+
+                            Text {
+                                x: parent.width - 92px;
+                                y: 18px;
+                                width: 76px;
+                                text: signal-row.is_header ? "" : (signal-row.pending ? "Marking..." : (signal-row.unread ? "Mark Read" : "Read"));
+                                color: signal-row.pending ? #f9fafb : (signal-row.unread ? #fef3c7 : #475569);
+                                horizontal-alignment: right;
+                                font-size: 11px;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+}
+
+export component WidgetWindow inherits Window {
+    title: "Signal Desk Widget";
+    preferred-width: 96px;
+    preferred-height: 96px;
+    min-width: 96px;
+    min-height: 96px;
+    max-width: 96px;
+    max-height: 96px;
+    always-on-top: true;
+    no-frame: true;
+    background: transparent;
+
+    in-out property <int> unread-count: 0;
+    in-out property <string> status-text: "Ready";
+    in-out property <bool> widget-visible: true;
+    in-out property <bool> drag-primed: false;
+    in-out property <bool> drag-started: false;
+
+    callback open-main();
+    callback refresh-data();
+    callback start-widget-drag();
+    callback show-widget-menu();
+
+    TouchArea {
+        mouse-cursor: grab;
+
+        pointer-event(event) => {
+            if (event.button == PointerEventButton.left && event.kind == PointerEventKind.down) {
+                root.drag-primed = true;
+                root.drag-started = false;
+            } else if (event.button == PointerEventButton.left && event.kind == PointerEventKind.up) {
+                root.drag-primed = false;
+            } else if (event.button == PointerEventButton.right && event.kind == PointerEventKind.up) {
+                root.drag-primed = false;
+                root.drag-started = false;
+                root.show-widget-menu();
+            } else if (event.kind == PointerEventKind.cancel) {
+                root.drag-primed = false;
+                root.drag-started = false;
+            }
+        }
+
+        moved => {
+            if (root.drag-primed && !root.drag-started &&
+                    (Math.abs(self.mouse_x - self.pressed_x) > 3px ||
+                    Math.abs(self.mouse_y - self.pressed_y) > 3px)) {
+                root.drag-started = true;
+                root.start-widget-drag();
+            }
+        }
+
+        clicked => {
+            if (!root.drag-started) {
+                root.open-main();
+            }
+            root.drag-primed = false;
+            root.drag-started = false;
+        }
+
+        double-clicked => {
+            if (!root.drag-started) {
+                root.refresh-data();
+            }
+            root.drag-primed = false;
+            root.drag-started = false;
+        }
+    }
+
+    Rectangle {
+        width: 100%;
+        height: 100%;
+        border-radius: 48px;
+        background: root.widget-visible ? #2563eb : #475569;
+
+        VerticalLayout {
+            padding: 10px;
+            spacing: 2px;
+            alignment: center;
+
+            Text {
+                text: root.unread-count;
+                color: #eff6ff;
+                font-size: 34px;
+                font-weight: 700;
+                horizontal-alignment: center;
+            }
+
+            Text {
+                text: "Signal";
+                color: #dbeafe;
+                font-size: 12px;
+                horizontal-alignment: center;
+            }
+        }
+    }
+}
