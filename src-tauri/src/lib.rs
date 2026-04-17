@@ -516,17 +516,6 @@ fn window_visible(window: &tauri::WebviewWindow) -> bool {
     window.is_visible().unwrap_or(false)
 }
 
-fn show_main_window(app: &AppHandle) -> Result<(), String> {
-    let window = app
-        .get_webview_window(MAIN_WINDOW)
-        .ok_or_else(|| "main window not found".to_string())?;
-
-    window.show().map_err(|err| err.to_string())?;
-    let _ = window.unminimize();
-    let _ = window.set_focus();
-    Ok(())
-}
-
 fn toggle_main_window(app: &AppHandle, state: &SharedState) -> Result<(), String> {
     let window = app
         .get_webview_window(MAIN_WINDOW)
@@ -722,12 +711,7 @@ fn handle_menu_event(app: &AppHandle, event: MenuEvent) {
             let app_handle = app.clone();
             let shared_state = state.inner().clone();
             spawn(async move {
-                if refresh_runtime_from_api(&app_handle, &shared_state)
-                    .await
-                    .is_ok()
-                {
-                    let _ = show_main_window(&app_handle);
-                }
+                let _ = refresh_runtime_from_api(&app_handle, &shared_state).await;
             });
         }
         "toggle_pin" => {
@@ -771,11 +755,7 @@ fn spawn_runtime_loop(app: AppHandle) {
                 continue;
             };
 
-            if let Ok(snapshot) = refresh_runtime_from_api(&app, &state).await {
-                if snapshot.unread_count > 0 {
-                    let _ = show_main_window(&app);
-                }
-            }
+            let _ = refresh_runtime_from_api(&app, &state).await;
         }
     });
 }
@@ -835,9 +815,7 @@ async fn refresh_signals(
     app: AppHandle,
     state: State<'_, SharedState>,
 ) -> Result<RuntimeSnapshot, String> {
-    let snapshot = refresh_runtime_from_api(&app, &state).await?;
-    let _ = show_main_window(&app);
-    Ok(snapshot)
+    refresh_runtime_from_api(&app, &state).await
 }
 
 #[tauri::command]
