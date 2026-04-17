@@ -369,6 +369,9 @@ button:focus-visible {
     display: grid;
     place-items: center;
     border-radius: 50%;
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-touch-callout: none;
 }
 
 .widget-drag-layer {
@@ -376,11 +379,15 @@ button:focus-visible {
     display: grid;
     place-items: center;
     pointer-events: none;
+    user-select: none;
+    -webkit-user-select: none;
 }
 
 .widget-drag-layer,
 .widget-drag-layer * {
   pointer-events: none;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .widget-orb.is-hot {
