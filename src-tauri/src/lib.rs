@@ -572,7 +572,7 @@ fn ensure_widget_window(app: &AppHandle) -> tauri::Result<()> {
         return Ok(());
     }
 
-    let window = WebviewWindowBuilder::new(
+    let mut builder = WebviewWindowBuilder::new(
         app,
         WIDGET_WINDOW,
         WebviewUrl::App("index.html?view=widget".into()),
@@ -587,8 +587,14 @@ fn ensure_widget_window(app: &AppHandle) -> tauri::Result<()> {
     .shadow(false)
     .skip_taskbar(true)
     .always_on_top(true)
-    .visible(true)
-    .build()?;
+    .visible(true);
+
+    #[cfg(windows)]
+    if let Some(main_window) = app.get_webview_window(MAIN_WINDOW) {
+        builder = builder.owner(&main_window)?;
+    }
+
+    let window = builder.build()?;
 
     let _ = window.set_ignore_cursor_events(false);
     position_widget(app);
