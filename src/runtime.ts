@@ -36,6 +36,14 @@ export function setEdgeWidth(width: number) {
   return invoke<RuntimeSnapshot>("set_edge_width", { width });
 }
 
+export function setNotifications(enabled: boolean) {
+  return invoke<RuntimeSnapshot>("set_notifications", { enabled });
+}
+
+export function setSound(enabled: boolean) {
+  return invoke<RuntimeSnapshot>("set_sound", { enabled });
+}
+
 export function quitApp() {
   return invoke<void>("quit_app");
 }

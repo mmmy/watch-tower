@@ -8,6 +8,8 @@ import {
   setAlwaysOnTop,
   setEdgeMode,
   setEdgeWidth,
+  setNotifications,
+  setSound,
   subscribeRuntime,
   toggleMain,
   triggerMockSignal,
@@ -751,6 +753,7 @@ function MainView({ snapshot, setSnapshot }: { snapshot: RuntimeSnapshot; setSna
   const groups = useMemo(() => groupedSignals(snapshot), [snapshot]);
   const [edgeWidthInput, setEdgeWidthInput] = useState(() => String(Math.round(snapshot.config.ui.edge_width)));
   const [now, setNow] = useState(() => Date.now());
+  const [moreOpen, setMoreOpen] = useState(false);
 
   useEffect(() => {
     document.documentElement.dataset.view = "main";
@@ -768,6 +771,30 @@ function MainView({ snapshot, setSnapshot }: { snapshot: RuntimeSnapshot; setSna
 
     return () => window.clearInterval(timer);
   }, []);
+
+  useEffect(() => {
+    if (!moreOpen) {
+      return;
+    }
+
+    function handlePointerDown() {
+      setMoreOpen(false);
+    }
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setMoreOpen(false);
+      }
+    }
+
+    window.addEventListener("pointerdown", handlePointerDown);
+    window.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      window.removeEventListener("pointerdown", handlePointerDown);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [moreOpen]);
 
   useEffect(() => {
     setEdgeWidthInput(String(Math.round(snapshot.config.ui.edge_width)));
@@ -855,46 +882,75 @@ function MainView({ snapshot, setSnapshot }: { snapshot: RuntimeSnapshot; setSna
   return (
     <div className="plugin-shell">
       <header className="plugin-toolbar">
-        <ToolbarToggle
-          checked={snapshot.always_on_top}
-          label="窗口置顶"
-          onChange={(value) => void setAlwaysOnTop(value).then(setSnapshot)}
-        />
-        <button onClick={() => void triggerMockSignal().then(setSnapshot)} type="button">
-          立即轮询
-        </button>
-        <button disabled type="button">
-          保存配置
-        </button>
-        <ToolbarToggle
-          checked={snapshot.edge_mode}
-          label={`贴边模式`}
-          onChange={(value) => void setEdgeMode(value).then(setSnapshot)}
-        />
-        <label className="toolbar-field">
-          <span>贴边宽度</span>
-          <input
-            className="toolbar-number"
-            inputMode="numeric"
-            onBlur={(event) => submitEdgeWidth(event.currentTarget.value)}
-            onChange={(event) => setEdgeWidthInput(event.currentTarget.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") {
-                submitEdgeWidth((event.target as HTMLInputElement).value);
-              }
-            }}
-            type="number"
-            value={edgeWidthInput}
+        <div className="toolbar-primary">
+          <ToolbarToggle
+            checked={snapshot.always_on_top}
+            label="置顶"
+            onChange={(value) => void setAlwaysOnTop(value).then(setSnapshot)}
           />
-        </label>
-        <ToolbarToggle checked={snapshot.config.ui.notifications} disabled label="通知" onChange={() => {}} />
-        <ToolbarToggle checked={snapshot.config.ui.sound} disabled label="声音" onChange={() => {}} />
-        <button onClick={() => void toggleMain()} type="button">
-          隐藏
-        </button>
-        <button onClick={() => void quitApp()} type="button">
-          退出
-        </button>
+          <ToolbarToggle
+            checked={snapshot.edge_mode}
+            label="贴边模式"
+            onChange={(value) => void setEdgeMode(value).then(setSnapshot)}
+          />
+          <ToolbarToggle
+            checked={snapshot.config.ui.notifications}
+            label="通知"
+            onChange={(value) => void setNotifications(value).then(setSnapshot)}
+          />
+          <ToolbarToggle
+            checked={snapshot.config.ui.sound}
+            label="声音"
+            onChange={(value) => void setSound(value).then(setSnapshot)}
+          />
+        </div>
+        <div className="toolbar-more">
+          <button
+            onClick={(event) => {
+              event.stopPropagation();
+              setMoreOpen((value) => !value);
+            }}
+            type="button"
+          >
+            更多
+          </button>
+          {moreOpen ? (
+            <div
+              className="toolbar-menu"
+              onPointerDown={(event) => event.stopPropagation()}
+              role="menu"
+            >
+              <button onClick={() => void triggerMockSignal().then(setSnapshot).finally(() => setMoreOpen(false))} type="button">
+                立即轮询
+              </button>
+              <label className="toolbar-menu-field">
+                <span>贴边宽度</span>
+                <input
+                  className="toolbar-number"
+                  inputMode="numeric"
+                  onBlur={(event) => submitEdgeWidth(event.currentTarget.value)}
+                  onChange={(event) => setEdgeWidthInput(event.currentTarget.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      submitEdgeWidth((event.target as HTMLInputElement).value);
+                    }
+                  }}
+                  type="number"
+                  value={edgeWidthInput}
+                />
+              </label>
+              <button disabled type="button">
+                保存配置
+              </button>
+              <button onClick={() => void toggleMain().finally(() => setMoreOpen(false))} type="button">
+                隐藏
+              </button>
+              <button onClick={() => void quitApp()} type="button">
+                退出
+              </button>
+            </div>
+          ) : null}
+        </div>
       </header>
 
       <div className="plugin-statusbar">

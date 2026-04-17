@@ -967,6 +967,34 @@ fn set_edge_width(
 }
 
 #[tauri::command]
+fn set_notifications(
+    app: AppHandle,
+    state: State<'_, SharedState>,
+    enabled: bool,
+) -> Result<RuntimeSnapshot, String> {
+    let snapshot = with_store(&state, |store| {
+        store.config.ui.notifications = enabled;
+        store.snapshot()
+    });
+    emit_snapshot(&app, snapshot.clone());
+    Ok(snapshot)
+}
+
+#[tauri::command]
+fn set_sound(
+    app: AppHandle,
+    state: State<'_, SharedState>,
+    enabled: bool,
+) -> Result<RuntimeSnapshot, String> {
+    let snapshot = with_store(&state, |store| {
+        store.config.ui.sound = enabled;
+        store.snapshot()
+    });
+    emit_snapshot(&app, snapshot.clone());
+    Ok(snapshot)
+}
+
+#[tauri::command]
 fn quit_app(app: AppHandle) {
     app.exit(0);
 }
@@ -989,6 +1017,8 @@ pub fn run() {
             set_always_on_top,
             set_edge_mode,
             set_edge_width,
+            set_notifications,
+            set_sound,
             quit_app
         ])
         .setup(|app| {

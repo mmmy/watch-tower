@@ -75,21 +75,31 @@ button:focus-visible {
 }
 
 .plugin-toolbar {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 4px 8px;
-    align-items: center;
-    padding: 4px 8px;
-    border-bottom: 1px solid #d0d0d0;
-    background: #efefef;
-    font-size: 12px;
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 8px;
+  align-items: center;
+  padding: 4px 8px;
+  border-bottom: 1px solid #d0d0d0;
+  background: #efefef;
+  font-size: 12px;
+  overflow-x: auto;
+  overflow-y: visible;
+}
+
+.toolbar-primary {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex: 1 1 auto;
 }
 
 .toolbar-toggle {
-    display: inline-flex;
-    align-items: center;
-    gap: 3px;
-    white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  white-space: nowrap;
 }
 
 .toolbar-toggle input {
@@ -120,8 +130,38 @@ button:focus-visible {
 }
 
 .toolbar-number:focus-visible {
-    outline: 1px solid #111;
-    outline-offset: 1px;
+  outline: 1px solid #111;
+  outline-offset: 1px;
+}
+
+.toolbar-more {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+}
+
+.toolbar-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  z-index: 20;
+  display: grid;
+  gap: 4px;
+  min-width: 140px;
+  padding: 6px;
+  border: 1px solid #cfcfcf;
+  background: #fff;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.08);
+}
+
+.toolbar-menu-field {
+  display: grid;
+  gap: 2px;
+}
+
+.toolbar-menu-field span {
+  color: #666;
 }
 
 .plugin-statusbar {
