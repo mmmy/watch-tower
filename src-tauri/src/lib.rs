@@ -298,6 +298,30 @@ fn load_config() -> AppConfig {
     default_config()
 }
 
+fn resolve_config_path_for_write() -> PathBuf {
+    for candidate in resolve_config_candidates() {
+        if candidate
+            .file_name()
+            .and_then(|value| value.to_str())
+            == Some("config.yaml")
+        {
+            return candidate;
+        }
+    }
+
+    if let Ok(current) = std::env::current_dir() {
+        if current.file_name().and_then(|value| value.to_str()) == Some("src-tauri") {
+            if let Some(parent) = current.parent() {
+                return parent.join("config.yaml");
+            }
+        }
+
+        return current.join("config.yaml");
+    }
+
+    PathBuf::from("config.yaml")
+}
+
 fn seed_signals(config: &AppConfig) -> Vec<RuntimeSignal> {
     let mut signals = Vec::new();
 
@@ -379,6 +403,13 @@ impl RuntimeStore {
         self.last_tick += 1;
         self.last_updated_at = now_ms();
         self.recompute_unread();
+    }
+
+    fn config_for_persistence(&self) -> AppConfig {
+        let mut config = self.config.clone();
+        config.ui.always_on_top = self.always_on_top;
+        config.ui.edge_mode = self.edge_mode;
+        config
     }
 }
 
@@ -842,6 +873,7 @@ fn set_always_on_top(
     update_main_window_pinning(&app, pinned)?;
     let snapshot = with_store(&state, |store| {
         store.always_on_top = pinned;
+        store.config.ui.always_on_top = pinned;
         store.snapshot()
     });
     emit_snapshot(&app, snapshot.clone());
@@ -879,6 +911,7 @@ fn set_edge_mode(
 
     let snapshot = with_store(&state, |store| {
         store.edge_mode = enabled;
+        store.config.ui.edge_mode = enabled;
         if !enabled {
             store.restore_bounds = None;
         }
@@ -938,6 +971,25 @@ fn set_sound(
 }
 
 #[tauri::command]
+fn save_config(state: State<'_, SharedState>) -> Result<RuntimeSnapshot, String> {
+    let path = resolve_config_path_for_write();
+    let (config, snapshot) = with_store(&state, |store| {
+        let config = store.config_for_persistence();
+        store.config = config.clone();
+        let snapshot = store.snapshot();
+        (config, snapshot)
+    });
+
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|err| err.to_string())?;
+    }
+
+    let content = serde_yaml::to_string(&config).map_err(|err| err.to_string())?;
+    fs::write(&path, content).map_err(|err| format!("failed to write {}: {}", path.display(), err))?;
+    Ok(snapshot)
+}
+
+#[tauri::command]
 fn quit_app(app: AppHandle) {
     app.exit(0);
 }
@@ -961,6 +1013,7 @@ pub fn run() {
             set_edge_width,
             set_notifications,
             set_sound,
+            save_config,
             quit_app
         ])
         .setup(|app| {

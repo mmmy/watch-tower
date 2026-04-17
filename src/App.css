@@ -180,6 +180,24 @@ button:focus-visible {
     padding: 0;
 }
 
+.status-message {
+    display: inline-flex;
+    align-items: center;
+    min-height: 20px;
+    padding: 0 6px;
+    border-radius: 4px;
+}
+
+.status-message.success {
+    color: #1c6b43;
+    background: #e7f6ee;
+}
+
+.status-message.error {
+    color: #a33636;
+    background: #fdecec;
+}
+
 .connection-status {
     display: inline-flex;
     align-items: center;

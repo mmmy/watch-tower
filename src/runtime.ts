@@ -40,6 +40,10 @@ export function setSound(enabled: boolean) {
   return invoke<RuntimeSnapshot>("set_sound", { enabled });
 }
 
+export function saveConfig() {
+  return invoke<RuntimeSnapshot>("save_config");
+}
+
 export function quitApp() {
   return invoke<void>("quit_app");
 }

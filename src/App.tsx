@@ -7,6 +7,7 @@ import {
   markSignalRead,
   quitApp,
   refreshSignals,
+  saveConfig,
   setAlwaysOnTop,
   setEdgeMode,
   setEdgeWidth,
@@ -787,6 +788,7 @@ function MainView({ snapshot, setSnapshot }: { snapshot: RuntimeSnapshot; setSna
   const [edgeWidthInput, setEdgeWidthInput] = useState(() => String(Math.round(snapshot.config.ui.edge_width)));
   const [now, setNow] = useState(() => Date.now());
   const [moreOpen, setMoreOpen] = useState(false);
+  const [saveNotice, setSaveNotice] = useState<{ tone: "success" | "error"; text: string } | null>(null);
 
   useEffect(() => {
     document.documentElement.dataset.view = "main";
@@ -832,6 +834,18 @@ function MainView({ snapshot, setSnapshot }: { snapshot: RuntimeSnapshot; setSna
   useEffect(() => {
     setEdgeWidthInput(String(Math.round(snapshot.config.ui.edge_width)));
   }, [snapshot.config.ui.edge_width]);
+
+  useEffect(() => {
+    if (!saveNotice) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      setSaveNotice(null);
+    }, saveNotice.tone === "error" ? 5000 : 2200);
+
+    return () => window.clearTimeout(timer);
+  }, [saveNotice]);
 
   async function performOptimisticUpdate(
     mutate: (value: RuntimeSnapshot) => RuntimeSnapshot,
@@ -906,6 +920,20 @@ function MainView({ snapshot, setSnapshot }: { snapshot: RuntimeSnapshot; setSna
     void setEdgeWidth(normalized).then(setSnapshot);
   }
 
+  async function handleSaveConfig() {
+    try {
+      const next = await saveConfig();
+      setSnapshot(next);
+      setSaveNotice({ tone: "success", text: "配置已保存" });
+    } catch (error) {
+      console.error(error);
+      const text = error instanceof Error ? error.message : String(error);
+      setSaveNotice({ tone: "error", text: `保存失败：${text}` });
+    } finally {
+      setMoreOpen(false);
+    }
+  }
+
   const connectionState = getConnectionState(
     snapshot.last_updated_at,
     snapshot.config.poll.interval_secs,
@@ -972,7 +1000,7 @@ function MainView({ snapshot, setSnapshot }: { snapshot: RuntimeSnapshot; setSna
                   value={edgeWidthInput}
                 />
               </label>
-              <button disabled type="button">
+              <button onClick={() => void handleSaveConfig()} type="button">
                 保存配置
               </button>
               <button onClick={() => void toggleMain().finally(() => setMoreOpen(false))} type="button">
@@ -993,6 +1021,11 @@ function MainView({ snapshot, setSnapshot }: { snapshot: RuntimeSnapshot; setSna
         >
           {snapshot.unread_count}
         </span>
+        {saveNotice ? (
+          <span aria-live="polite" className={`status-message ${saveNotice.tone}`}>
+            {saveNotice.text}
+          </span>
+        ) : null}
         <span>last poll: {formatTime(snapshot.last_updated_at)}</span>
         <span className={`connection-status ${connectionState.tone}`}>
           <span className="connection-dot" />
