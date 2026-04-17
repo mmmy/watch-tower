@@ -47,17 +47,24 @@ function periodToMs(period: string): number {
   return Number.parseInt(period, 10) * 60 * 1000;
 }
 
-function buildTimeline(signal: RuntimeSignal, now: number) {
-  const cells = new Array(CELL_COUNT).fill(0);
+function getTimelineMarker(signal: RuntimeSignal, now: number) {
   const elapsed = Math.max(now - signal.trigger_time, 0);
   const candlesAgo = Math.floor(elapsed / periodToMs(signal.period));
   const activeIndex = CELL_COUNT - 1 - candlesAgo;
 
   if (activeIndex >= 0 && activeIndex < CELL_COUNT) {
-    cells[activeIndex] = signal.side;
+    return {
+      active: true,
+      leftPercent: (activeIndex / (CELL_COUNT - 1)) * 100,
+      side: signal.side,
+    };
   }
 
-  return cells;
+  return {
+    active: false,
+    leftPercent: 0,
+    side: signal.side,
+  };
 }
 
 function formatTime(ts: number) {
@@ -632,7 +639,7 @@ function PeriodRow({
   onMarkRead: (signal: RuntimeSignal, read: boolean) => void;
 }) {
   const now = Date.now();
-  const cells = buildTimeline(signal, now);
+  const marker = getTimelineMarker(signal, now);
   const isLong = signal.side > 0;
 
   return (
@@ -647,20 +654,18 @@ function PeriodRow({
         {signal.period}
       </button>
       <div className="period-track" aria-label={`${group.symbol} ${signal.period} ${signal.signal_type}`}>
-        {cells.map((cell, index) => (
+        {marker.active ? (
           <span
-            // eslint-disable-next-line react/no-array-index-key
-            key={`${signal.group_id}-${signal.signal_type}-${signal.period}-${index}`}
             className={[
-              "period-cell",
-              cell === 1 ? "is-long" : "",
-              cell === -1 ? "is-short" : "",
-              signal.unread && cell !== 0 ? "is-unread" : "",
+              "period-marker",
+              marker.side > 0 ? "is-long" : "is-short",
+              signal.unread ? "is-unread" : "",
             ]
               .filter(Boolean)
               .join(" ")}
+            style={{ left: `${marker.leftPercent}%` }}
           />
-        ))}
+        ) : null}
       </div>
     </div>
   );

@@ -364,24 +364,34 @@ button:focus-visible {
 }
 
 .period-track {
-    display: grid;
-    grid-template-columns: repeat(60, minmax(0, 1fr));
-    gap: 0px;
+    position: relative;
     min-width: 0;
-}
-
-.period-cell {
     height: var(--signal-row-height);
-    border-radius: 1px;
     background: #eceff3;
 }
 
-.period-cell.is-long {
+.period-marker {
+    position: absolute;
+    top: 50%;
+    width: 4px;
+    height: var(--signal-row-height);
+    border-radius: 0;
+    transform: translate(-50%, -50%);
+    box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.55);
+}
+
+.period-marker.is-long {
     background: #43d59d;
 }
 
-.period-cell.is-short {
+.period-marker.is-short {
     background: #ff6d7a;
+}
+
+.period-marker.is-unread {
+    box-shadow:
+        0 0 0 1px rgba(255, 255, 255, 0.75),
+        0 0 0 4px rgba(217, 149, 0, 0.12);
 }
 
 .widget-shell {
@@ -446,8 +456,12 @@ button:focus-visible {
 }
 
 .widget-orb.is-hot {
-    background:
-        radial-gradient(circle at 30% 30%, rgba(255, 223, 145, 0.88), rgba(255, 156, 77, 0.92) 48%, #d94b3d 100%);
+    background: radial-gradient(
+        circle at 30% 30%,
+        rgba(255, 223, 145, 0.88),
+        rgba(255, 156, 77, 0.92) 48%,
+        #d94b3d 100%
+    );
 }
 
 .widget-orb.is-calm {
