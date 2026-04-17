@@ -674,9 +674,13 @@ fn build_tray(app: &App) -> tauri::Result<()> {
         .item(&quit)
         .build()?;
 
-    TrayIconBuilder::new()
-        .menu(&menu)
-        .tooltip("Signal Desk")
+    let mut tray_builder = TrayIconBuilder::new().menu(&menu).tooltip("Signal Desk");
+
+    if let Some(icon) = app.default_window_icon() {
+        tray_builder = tray_builder.icon(icon.clone());
+    }
+
+    tray_builder
         .on_menu_event(|app, event| handle_menu_event(app, event))
         .on_tray_icon_event(|tray, event| match event {
             TrayIconEvent::Click {
