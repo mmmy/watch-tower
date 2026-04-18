@@ -290,3 +290,51 @@ fn signal_rows_toggle_single_item_read_state() {
     assert!(after_unread.signal_rows[1].unread);
     assert_eq!(after_unread.unread_count, 1);
 }
+
+#[test]
+fn unread_items_follow_signal_order_and_clear_after_mark_read() {
+    let mut runtime_snapshot = runtime_snapshot_from_config(AppConfig {
+        groups: vec![WatchGroup::default()],
+        ..Default::default()
+    });
+
+    runtime_snapshot.signals[0].symbol = "BTCUSDT".into();
+    runtime_snapshot.signals[0].group_name = "BTC Main".into();
+    runtime_snapshot.signals[0].signal_type = "divMacd".into();
+    runtime_snapshot.signals[0].period = "60".into();
+    runtime_snapshot.signals[0].trigger_time = 3_600_000;
+    runtime_snapshot.signals[0].unread = true;
+
+    runtime_snapshot.signals[1].symbol = "BTCUSDT".into();
+    runtime_snapshot.signals[1].group_name = "BTC Main".into();
+    runtime_snapshot.signals[1].signal_type = "divMacd".into();
+    runtime_snapshot.signals[1].period = "15".into();
+    runtime_snapshot.signals[1].trigger_time = 7_200_000;
+    runtime_snapshot.signals[1].unread = true;
+
+    runtime_snapshot.unread_count = runtime_snapshot
+        .signals
+        .iter()
+        .filter(|signal| signal.unread)
+        .count();
+
+    let mut state = AppState::new(runtime_snapshot);
+    let before = state.snapshot();
+
+    assert_eq!(before.unread_items.len(), 2);
+    assert_eq!(before.unread_items[0].row_index, 2);
+    assert_eq!(before.unread_items[0].symbol, "BTCUSDT");
+    assert_eq!(before.unread_items[0].period, "15");
+    assert!(before.unread_items[0].meta.contains("BTC Main"));
+    assert!(before.unread_items[0].meta.contains("divMacd"));
+    assert_eq!(before.unread_items[1].row_index, 1);
+
+    let mark_read = state.toggle_signal_row_at(before.unread_items[0].row_index as usize);
+    let after = state.snapshot();
+
+    assert!(mark_read.is_some());
+    assert_eq!(after.unread_count, 1);
+    assert_eq!(after.unread_items.len(), 1);
+    assert_eq!(after.unread_items[0].row_index, 1);
+    assert_eq!(after.unread_items[0].period, "60");
+}

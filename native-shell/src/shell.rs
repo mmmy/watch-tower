@@ -635,6 +635,17 @@ fn apply_snapshot_to_main(main_window: &MainWindow, snapshot: &UiSnapshot) {
             timeline_positive: row.timeline_positive,
         })
         .collect();
+    let unread_items: Vec<UnreadItemData> = snapshot
+        .unread_items
+        .iter()
+        .map(|item| UnreadItemData {
+            row_index: item.row_index,
+            symbol: SharedString::from(item.symbol.as_str()),
+            period: SharedString::from(item.period.as_str()),
+            meta: SharedString::from(item.meta.as_str()),
+        })
+        .collect();
+    main_window.set_unread_items(VecModel::from_slice(&unread_items));
     main_window.set_signal_rows(VecModel::from_slice(&signal_rows));
     main_window.set_main_visible(snapshot.main_visible);
     main_window.set_widget_visible(snapshot.widget_visible);

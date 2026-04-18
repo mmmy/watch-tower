@@ -3,6 +3,7 @@ use crate::runtime::{RuntimeSignal, RuntimeSnapshot, SignalMutationInput};
 #[derive(Clone, Debug)]
 pub struct UiSnapshot {
     pub unread_count: i32,
+    pub unread_items: Vec<UiUnreadItem>,
     pub last_refresh_failed: bool,
     pub status_text: String,
     pub refresh_label: String,
@@ -38,6 +39,15 @@ pub struct UiSignalRow {
 }
 
 #[derive(Clone, Debug)]
+pub struct UiUnreadItem {
+    pub row_index: i32,
+    pub symbol: String,
+    pub period: String,
+    pub meta: String,
+    pub trigger_time: i64,
+}
+
+#[derive(Clone, Debug)]
 enum RowAction {
     Group(Vec<SignalMutationInput>),
     Single {
@@ -50,6 +60,7 @@ enum RowAction {
 struct SignalRowView {
     row: UiSignalRow,
     action: Option<RowAction>,
+    unread_item: Option<UiUnreadItem>,
 }
 
 #[derive(Debug)]
@@ -111,11 +122,18 @@ impl AppState {
         let connection = get_connection_state(self.runtime_snapshot.last_connection_ok);
 
         let config_location = crate::runtime::config_location_hint();
-        let signal_rows = self
-            .build_signal_row_views()
-            .into_iter()
-            .map(|entry| entry.row)
+        let row_views = self.build_signal_row_views();
+        let signal_rows = row_views.iter().map(|entry| entry.row.clone()).collect::<Vec<_>>();
+        let mut unread_items = row_views
+            .iter()
+            .filter_map(|entry| entry.unread_item.clone())
             .collect::<Vec<_>>();
+        unread_items.sort_by(|left, right| {
+            right
+                .trigger_time
+                .cmp(&left.trigger_time)
+                .then_with(|| left.row_index.cmp(&right.row_index))
+        });
 
         let runtime_summary = format!(
             "配置来源：{} · 最近更新(ms)：{} · API：{} · 信号数：{}",
@@ -138,6 +156,7 @@ impl AppState {
 
         UiSnapshot {
             unread_count: self.runtime_snapshot.unread_count as i32,
+            unread_items,
             last_refresh_failed,
             status_text,
             refresh_label,
@@ -294,12 +313,14 @@ impl AppState {
                             Some(RowAction::Group(unread_keys))
                         }
                     },
+                    unread_item: None,
                 });
 
                 for signal in signals {
                     let key = signal_to_key(&signal);
                     let side = if signal.side >= 0 { "多" } else { "空" };
                     let timeline_ratio = timeline_marker_ratio(&signal, current_time_ms());
+                    let row_index = rows.len() as i32;
 
                     rows.push(SignalRowView {
                         row: UiSignalRow {
@@ -316,6 +337,19 @@ impl AppState {
                         action: Some(RowAction::Single {
                             key,
                             read: signal.unread,
+                        }),
+                        unread_item: signal.unread.then(|| UiUnreadItem {
+                            row_index,
+                            symbol: signal.symbol.clone(),
+                            period: signal.period.clone(),
+                            meta: format!(
+                                "{} · {} · {} · {}",
+                                group.name,
+                                signal.signal_type,
+                                side,
+                                format_timestamp(signal.trigger_time)
+                            ),
+                            trigger_time: signal.trigger_time,
                         }),
                     });
                 }
