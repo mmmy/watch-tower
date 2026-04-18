@@ -406,18 +406,29 @@ export component MainWindow inherits Window {
 
                         TouchArea {
                             clicked => {
-                                if (!signal-row.pending && signal-row.unread &&
-                                        ((signal-row.is_header && signal-row.unread_count > 0) ||
-                                        !signal-row.is_header)) {
+                                if (signal-row.is_header && !signal-row.pending &&
+                                        signal-row.unread_count > 0) {
                                     root.activate-signal(index);
                                 }
                             }
                         }
 
+                        Rectangle {
+                            x: 8px;
+                            y: 10px;
+                            width: 6px;
+                            height: 6px;
+                            border-radius: 3px;
+                            visible: !signal-row.is_header && (signal-row.pending || signal-row.unread);
+                            background: signal-row.pending ? #ef4444
+                                : signal-row.unread ? #f0b100
+                                : #9ca3af;
+                        }
+
                         Text {
-                            x: 6px;
+                            x: signal-row.is_header ? 6px : 18px;
                             y: signal-row.is_header ? 4px : 4px;
-                            width: signal-row.is_header ? 72px : 48px;
+                            width: signal-row.is_header ? 64px : 40px;
                             text: signal-row.title;
                             color: #202020;
                             font-size: signal-row.is_header ? 15px : 12px;
@@ -426,7 +437,7 @@ export component MainWindow inherits Window {
                         }
 
                         Rectangle {
-                            x: 80px;
+                            x: 90px;
                             y: 6px;
                             width: signal-row.pending ? 24px : (signal-row.unread_count > 9 ? 24px : 18px);
                             height: 16px;
@@ -447,9 +458,9 @@ export component MainWindow inherits Window {
                         }
 
                         Text {
-                            x: signal-row.is_header ? 6px : 60px;
+                            x: signal-row.is_header ? 6px : 58px;
                             y: signal-row.is_header ? 22px : 4px;
-                            width: signal-row.is_header ? parent.width - 72px : parent.width - 120px;
+                            width: signal-row.is_header ? parent.width - 86px : parent.width - 72px;
                             text: signal-row.meta;
                             color: signal-row.unread ? #404040 : #707070;
                             font-size: signal-row.is_header ? 11px : 10px;
@@ -460,9 +471,7 @@ export component MainWindow inherits Window {
                             x: parent.width - 48px;
                             y: signal-row.is_header ? 10px : 4px;
                             width: 42px;
-                            text: signal-row.is_header
-                                ? ""
-                                : (signal-row.pending ? "..." : (signal-row.unread ? "新" : ""));
+                            text: "";
                             color: signal-row.unread ? #202020 : #808080;
                             font-size: 11px;
                             font-weight: 600;

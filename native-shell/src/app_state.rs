@@ -35,7 +35,6 @@ pub struct UiSignalRow {
 
 #[derive(Clone, Debug)]
 enum RowAction {
-    Single(SignalMutationInput),
     Group(Vec<SignalMutationInput>),
 }
 
@@ -196,7 +195,6 @@ impl AppState {
             .get(index)
             .and_then(|entry| entry.action.clone())
             .map(|action| match action {
-                RowAction::Single(key) => vec![key],
                 RowAction::Group(keys) => keys,
             })
             .unwrap_or_default();
@@ -281,28 +279,18 @@ impl AppState {
 
             for signal in signals {
                 let key = signal_to_key(&signal);
-                let read_state = if signal.unread { "未读" } else { "已读" };
                 let side = if signal.side >= 0 { "多" } else { "空" };
 
                 rows.push(SignalRowView {
                     row: UiSignalRow {
                         title: signal.period.clone(),
-                        meta: format!(
-                            "{} · {} · {}",
-                            read_state,
-                            side,
-                            format_timestamp(signal.trigger_time)
-                        ),
+                        meta: format!("{} · {}", side, format_timestamp(signal.trigger_time)),
                         is_header: false,
                         unread: signal.unread,
                         pending: self.pending_mark_read.iter().any(|pending| pending == &key),
                         unread_count: 0,
                     },
-                    action: if signal.unread {
-                        Some(RowAction::Single(key))
-                    } else {
-                        None
-                    },
+                    action: None,
                 });
             }
         }

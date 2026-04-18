@@ -92,3 +92,35 @@ fn header_rows_expose_group_unread_counts_and_support_batch_mark_read() {
     assert_eq!(after.signal_rows[0].unread_count, 0);
     assert_eq!(after.unread_count, 1);
 }
+
+#[test]
+fn signal_rows_no_longer_mark_single_items_as_read() {
+    let mut runtime_snapshot = runtime_snapshot_from_config(AppConfig {
+        groups: vec![WatchGroup::default()],
+        ..Default::default()
+    });
+
+    runtime_snapshot.signals[0].group_name = "BTC Main".into();
+    runtime_snapshot.signals[0].signal_type = "divMacd".into();
+    runtime_snapshot.signals[0].period = "60".into();
+    runtime_snapshot.signals[0].unread = true;
+
+    runtime_snapshot.signals[1].group_name = "BTC Main".into();
+    runtime_snapshot.signals[1].signal_type = "divMacd".into();
+    runtime_snapshot.signals[1].period = "15".into();
+    runtime_snapshot.signals[1].unread = true;
+
+    runtime_snapshot.unread_count = runtime_snapshot
+        .signals
+        .iter()
+        .filter(|signal| signal.unread)
+        .count();
+
+    let mut state = AppState::new(runtime_snapshot);
+    let keys = state.activate_row_at(1);
+    let after = state.snapshot();
+
+    assert!(keys.is_empty());
+    assert_eq!(after.signal_rows[0].unread_count, 2);
+    assert_eq!(after.unread_count, 2);
+}
