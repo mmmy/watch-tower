@@ -64,6 +64,33 @@ component MoreButton inherits Rectangle {
     }
 }
 
+component MenuButton inherits Rectangle {
+    in property <string> text;
+    callback clicked();
+
+    width: 100%;
+    height: 28px;
+    border-width: 1px;
+    border-color: #c3c3c3;
+    background: #f7f7f7;
+
+    TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+
+    Text {
+        y: 5px;
+        width: parent.width;
+        text: root.text;
+        color: #202020;
+        font-size: 12px;
+        horizontal-alignment: center;
+        overflow: elide;
+    }
+}
+
 component PlainCheckBox inherits Rectangle {
     in property <string> text;
     in-out property <bool> checked;
@@ -138,8 +165,6 @@ export component MainWindow inherits Window {
     in-out property <bool> edge-mode: false;
     in-out property <bool> notifications-enabled: true;
     in-out property <bool> sound-enabled: true;
-    in-out property <bool> more-open: false;
-
     callback toggle-always-on-top();
     callback toggle-edge-mode();
     callback adjust-edge-width(int);
@@ -156,7 +181,7 @@ export component MainWindow inherits Window {
         padding: 2px;
         spacing: 2px;
 
-        Rectangle {
+        toolbar := Rectangle {
             height: 30px;
             border-width: 1px;
             border-color: #c8c8c8;
@@ -209,91 +234,95 @@ export component MainWindow inherits Window {
             MoreButton {
                 x: parent.width - self.width - 6px;
                 y: 5px;
-                text: root.more-open ? "收起" : "更多";
+                text: "更多";
                 clicked => {
-                    root.more-open = !root.more-open;
+                    more-menu.show();
                 }
             }
-        }
 
-        if root.more-open : Rectangle {
-            height: 54px;
-            border-width: 1px;
-            border-color: #c8c8c8;
-            background: #f8f8f8;
+            more-menu := PopupWindow {
+                x: toolbar.width - self.width - 6px;
+                y: toolbar.height - 1px;
+                width: 170px;
+                height: 152px;
+                close-policy: close-on-click-outside;
 
-            VerticalLayout {
-                padding-left: 6px;
-                padding-right: 6px;
-                padding-top: 2px;
-                padding-bottom: 2px;
-                spacing: 2px;
+                Rectangle {
+                    border-width: 1px;
+                    border-color: #bdbdbd;
+                    background: #f3f3f3;
 
-                HorizontalBox {
-                    spacing: 6px;
+                    VerticalLayout {
+                        padding: 6px;
+                        spacing: 6px;
 
-                    PlainButton {
-                        text: "刷新";
-                        clicked => {
-                            root.more-open = false;
-                            root.refresh-data();
+                        MenuButton {
+                            text: "立即轮询";
+                            clicked => {
+                                more-menu.close();
+                                root.refresh-data();
+                            }
                         }
-                    }
 
-                    PlainButton {
-                        text: root.widget-visible ? "隐藏挂件" : "显示挂件";
-                        clicked => {
-                            root.more-open = false;
-                            root.toggle-widget();
+                        Rectangle {
+                            height: 28px;
+                            border-width: 1px;
+                            border-color: #d0d0d0;
+                            background: #ffffff;
+
+                            Text {
+                                x: 8px;
+                                y: 6px;
+                                width: parent.width - 48px;
+                                text: root.edge-width-label;
+                                color: #202020;
+                                font-size: 12px;
+                                overflow: elide;
+                            }
+
+                            PlainButton {
+                                x: parent.width - 42px;
+                                y: 3px;
+                                width: 16px;
+                                text: "-";
+                                clicked => {
+                                    root.adjust-edge-width(-20);
+                                }
+                            }
+
+                            PlainButton {
+                                x: parent.width - 22px;
+                                y: 3px;
+                                width: 16px;
+                                text: "+";
+                                clicked => {
+                                    root.adjust-edge-width(20);
+                                }
+                            }
                         }
-                    }
 
-                    PlainButton {
-                        text: "收起主窗";
-                        clicked => {
-                            root.more-open = false;
-                            root.hide-main();
+                        MenuButton {
+                            text: "保存配置";
+                            clicked => {
+                                more-menu.close();
+                                root.save-config();
+                            }
                         }
-                    }
 
-                    PlainButton {
-                        text: "保存";
-                        clicked => {
-                            root.more-open = false;
-                            root.save-config();
+                        MenuButton {
+                            text: "隐藏";
+                            clicked => {
+                                more-menu.close();
+                                root.hide-main();
+                            }
                         }
-                    }
 
-                    PlainButton {
-                        text: "退出";
-                        clicked => {
-                            root.more-open = false;
-                            root.quit-app();
-                        }
-                    }
-                }
-
-                HorizontalBox {
-                    spacing: 6px;
-
-                    Text {
-                        text: "贴边宽度 " + root.edge-width-label;
-                        color: #404040;
-                        font-size: 11px;
-                        vertical-alignment: center;
-                    }
-
-                    PlainButton {
-                        text: "-";
-                        clicked => {
-                            root.adjust-edge-width(-20);
-                        }
-                    }
-
-                    PlainButton {
-                        text: "+";
-                        clicked => {
-                            root.adjust-edge-width(20);
+                        MenuButton {
+                            text: "退出";
+                            clicked => {
+                                more-menu.close();
+                                root.quit-app();
+                            }
                         }
                     }
                 }
