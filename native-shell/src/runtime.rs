@@ -286,9 +286,11 @@ impl RuntimeStore {
             .count();
     }
 
-    fn apply_remote_signals(&mut self, signals: Vec<RuntimeSignal>) {
+    fn apply_remote_signals(&mut self, signals: Vec<RuntimeSignal>, advance_tick: bool) {
         self.signals = signals;
-        self.last_tick += 1;
+        if advance_tick {
+            self.last_tick += 1;
+        }
         self.last_updated_at = now_ms();
         self.recompute_unread();
     }
@@ -337,7 +339,11 @@ impl RuntimeModel {
     }
 
     pub fn refresh_from_api(&mut self) -> Result<RuntimeSnapshot, String> {
-        refresh_runtime_from_api(&mut self.store)
+        self.refresh_from_api_with_tick(true)
+    }
+
+    fn refresh_from_api_with_tick(&mut self, advance_tick: bool) -> Result<RuntimeSnapshot, String> {
+        refresh_runtime_from_api(&mut self.store, advance_tick)
     }
 
     pub fn mark_signal_read_remote(
@@ -409,15 +415,18 @@ where
         let mut runtime = RuntimeModel::load();
         on_snapshot(runtime.snapshot());
 
-        loop {
-            match runtime.refresh_from_api() {
-                Ok(snapshot) => on_snapshot(snapshot),
-                Err(error) => on_error(error),
-            }
+        match runtime.refresh_from_api_with_tick(false) {
+            Ok(snapshot) => on_snapshot(snapshot),
+            Err(error) => on_error(error),
+        }
 
+        loop {
             let wait_for = Duration::from_secs(runtime.snapshot().config.poll.interval_secs.max(1));
             match rx.recv_timeout(wait_for) {
-                Ok(RuntimeCommand::RefreshNow) => {}
+                Ok(RuntimeCommand::RefreshNow) => match runtime.refresh_from_api() {
+                    Ok(snapshot) => on_snapshot(snapshot),
+                    Err(error) => on_error(error),
+                },
                 Ok(RuntimeCommand::MarkSignalRead { input, read }) => {
                     match runtime.mark_signal_read_remote(&input, read) {
                         Ok(snapshot) => on_snapshot(snapshot),
@@ -444,7 +453,10 @@ where
                     Err(error) => on_error(error),
                 },
                 Ok(RuntimeCommand::Quit) | Err(RecvTimeoutError::Disconnected) => break,
-                Err(RecvTimeoutError::Timeout) => {}
+                Err(RecvTimeoutError::Timeout) => match runtime.refresh_from_api() {
+                    Ok(snapshot) => on_snapshot(snapshot),
+                    Err(error) => on_error(error),
+                },
             }
         }
     });
@@ -606,9 +618,12 @@ fn fetch_runtime_signals(config: &AppConfig) -> Result<Vec<RuntimeSignal>, Strin
     Ok(signals)
 }
 
-fn refresh_runtime_from_api(store: &mut RuntimeStore) -> Result<RuntimeSnapshot, String> {
+fn refresh_runtime_from_api(
+    store: &mut RuntimeStore,
+    advance_tick: bool,
+) -> Result<RuntimeSnapshot, String> {
     let signals = fetch_runtime_signals(&store.config)?;
-    store.apply_remote_signals(signals);
+    store.apply_remote_signals(signals, advance_tick);
     Ok(store.snapshot())
 }
 
@@ -657,4 +672,41 @@ fn mark_signal_read_remote(
 
 pub fn config_location_hint() -> String {
     config::config_location_hint()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{AppConfig, RuntimeStore, WatchGroup};
+
+    #[test]
+    fn apply_remote_signals_can_refresh_without_advancing_tick() {
+        let config = AppConfig {
+            groups: vec![WatchGroup::default()],
+            ..Default::default()
+        };
+        let mut store = RuntimeStore::new(config);
+        let mut signals = store.signals.clone();
+        signals[0].trigger_time = 123;
+
+        store.apply_remote_signals(signals, false);
+
+        assert_eq!(store.last_tick, 0);
+        assert_eq!(store.signals[0].trigger_time, 123);
+    }
+
+    #[test]
+    fn apply_remote_signals_advances_tick_for_real_refreshes() {
+        let config = AppConfig {
+            groups: vec![WatchGroup::default()],
+            ..Default::default()
+        };
+        let mut store = RuntimeStore::new(config);
+        let mut signals = store.signals.clone();
+        signals[0].trigger_time = 456;
+
+        store.apply_remote_signals(signals, true);
+
+        assert_eq!(store.last_tick, 1);
+        assert_eq!(store.signals[0].trigger_time, 456);
+    }
 }
