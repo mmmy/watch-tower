@@ -31,11 +31,18 @@ pub struct UiSignalRow {
     pub unread: bool,
     pub pending: bool,
     pub unread_count: i32,
+    pub timeline_visible: bool,
+    pub timeline_ratio: f32,
+    pub timeline_positive: bool,
 }
 
 #[derive(Clone, Debug)]
 enum RowAction {
     Group(Vec<SignalMutationInput>),
+    Single {
+        key: SignalMutationInput,
+        read: bool,
+    },
 }
 
 #[derive(Clone, Debug)]
@@ -196,6 +203,7 @@ impl AppState {
             .and_then(|entry| entry.action.clone())
             .map(|action| match action {
                 RowAction::Group(keys) => keys,
+                RowAction::Single { .. } => Vec::new(),
             })
             .unwrap_or_default();
 
@@ -208,90 +216,108 @@ impl AppState {
         keys
     }
 
-    fn sorted_live_signals(&self) -> Vec<RuntimeSignal> {
-        let mut live_signals = self
-            .runtime_snapshot
-            .signals
-            .iter()
-            .filter(|signal| !signal.deleted)
-            .cloned()
-            .collect::<Vec<_>>();
+    pub fn toggle_signal_row_at(&mut self, index: usize) -> Option<(SignalMutationInput, bool)> {
+        let action = self
+            .build_signal_row_views()
+            .get(index)
+            .and_then(|entry| entry.action.clone());
 
-        live_signals.sort_by(|left, right| {
-            left.group_name
-                .cmp(&right.group_name)
-                .then_with(|| left.signal_type.cmp(&right.signal_type))
-                .then_with(|| right.unread.cmp(&left.unread))
-                .then_with(|| right.trigger_time.cmp(&left.trigger_time))
-                .then_with(|| left.symbol.cmp(&right.symbol))
-                .then_with(|| left.period.cmp(&right.period))
-        });
+        let RowAction::Single { key, read } = action? else {
+            return None;
+        };
 
-        live_signals
+        self.pending_mark_read = vec![key.clone()];
+        self.mark_keys_read(std::slice::from_ref(&key), read);
+        Some((key, read))
     }
 
     fn build_signal_row_views(&self) -> Vec<SignalRowView> {
-        let mut sections: Vec<((String, String), Vec<RuntimeSignal>)> = Vec::new();
-        let mut current_key: Option<(String, String)> = None;
+        let mut rows = Vec::new();
+        for group in self
+            .runtime_snapshot
+            .config
+            .groups
+            .iter()
+            .filter(|group| group.enabled)
+        {
+            for signal_type in &group.signal_types {
+                let signals = group
+                    .periods
+                    .iter()
+                    .filter_map(|period| {
+                        self.runtime_snapshot
+                            .signals
+                            .iter()
+                            .find(|signal| {
+                                !signal.deleted
+                                    && signal.group_id == group.id
+                                    && signal.signal_type == *signal_type
+                                    && signal.period == *period
+                            })
+                            .cloned()
+                    })
+                    .collect::<Vec<_>>();
 
-        for signal in self.sorted_live_signals() {
-            let group_key = (signal.group_name.clone(), signal.signal_type.clone());
-            if current_key.as_ref() == Some(&group_key) {
-                if let Some((_, rows)) = sections.last_mut() {
-                    rows.push(signal);
+                if signals.is_empty() {
                     continue;
                 }
-            }
-            sections.push((group_key, vec![signal]));
-            current_key = Some(sections.last().expect("section inserted").0.clone());
-        }
-
-        let mut rows = Vec::new();
-        for ((group_name, signal_type), signals) in sections {
-            let section_keys = signals.iter().map(signal_to_key).collect::<Vec<_>>();
-            let unread_keys = signals
-                .iter()
-                .filter(|signal| signal.unread)
-                .map(signal_to_key)
-                .collect::<Vec<_>>();
-            let pending_group = section_keys
-                .iter()
-                .any(|key| self.pending_mark_read.iter().any(|pending| pending == key));
-
-            rows.push(SignalRowView {
-                row: UiSignalRow {
-                    title: signals
-                        .first()
-                        .map(|signal| signal.symbol.clone())
-                        .unwrap_or_default(),
-                    meta: format!("{}  {}", group_name, signal_type),
-                    is_header: true,
-                    unread: unread_keys.len() > 0,
-                    pending: pending_group,
-                    unread_count: unread_keys.len() as i32,
-                },
-                action: if unread_keys.is_empty() {
-                    None
-                } else {
-                    Some(RowAction::Group(unread_keys))
-                },
-            });
-
-            for signal in signals {
-                let key = signal_to_key(&signal);
-                let side = if signal.side >= 0 { "多" } else { "空" };
 
                 rows.push(SignalRowView {
                     row: UiSignalRow {
-                        title: signal.period.clone(),
-                        meta: format!("{} · {}", side, format_timestamp(signal.trigger_time)),
-                        is_header: false,
-                        unread: signal.unread,
-                        pending: self.pending_mark_read.iter().any(|pending| pending == &key),
-                        unread_count: 0,
+                        title: signals
+                            .first()
+                            .map(|signal| signal.symbol.clone())
+                            .unwrap_or_default(),
+                        meta: format!("{}  {}", group.name, signal_type),
+                        is_header: true,
+                        unread: signals.iter().any(|signal| signal.unread),
+                        pending: signals.iter().any(|signal| {
+                            self.pending_mark_read
+                                .iter()
+                                .any(|pending| pending == &signal_to_key(signal))
+                        }),
+                        unread_count: signals.iter().filter(|signal| signal.unread).count() as i32,
+                        timeline_visible: false,
+                        timeline_ratio: 0.0,
+                        timeline_positive: true,
                     },
-                    action: None,
+                    action: {
+                        let unread_keys = signals
+                            .iter()
+                            .filter(|signal| signal.unread)
+                            .map(signal_to_key)
+                            .collect::<Vec<_>>();
+                        if unread_keys.is_empty() {
+                            None
+                        } else {
+                            Some(RowAction::Group(unread_keys))
+                        }
+                    },
                 });
+
+                for signal in signals {
+                    let key = signal_to_key(&signal);
+                    let side = if signal.side >= 0 { "多" } else { "空" };
+                    let timeline_ratio = timeline_marker_ratio(&signal, current_time_ms());
+
+                    rows.push(SignalRowView {
+                        row: UiSignalRow {
+                            title: signal.period.clone(),
+                            meta: format!("{} · {}", side, format_timestamp(signal.trigger_time)),
+                            is_header: false,
+                            unread: signal.unread,
+                            pending: self.pending_mark_read.iter().any(|pending| pending == &key),
+                            unread_count: 0,
+                            timeline_visible: timeline_ratio.is_some(),
+                            timeline_ratio: timeline_ratio.unwrap_or(0.0),
+                            timeline_positive: signal.side >= 0,
+                        },
+                        action: Some(RowAction::Single {
+                            key,
+                            read: signal.unread,
+                        }),
+                    });
+                }
             }
         }
 
@@ -334,6 +360,44 @@ fn signal_to_key(signal: &RuntimeSignal) -> SignalMutationInput {
         group_id: signal.group_id.clone(),
         signal_type: signal.signal_type.clone(),
         period: signal.period.clone(),
+    }
+}
+
+fn timeline_marker_ratio(signal: &RuntimeSignal, now_ms: i64) -> Option<f32> {
+    const CELL_COUNT: i64 = 60;
+
+    if signal.trigger_time <= 0 {
+        return None;
+    }
+
+    let period_ms = period_to_ms(&signal.period)?;
+    if period_ms <= 0 {
+        return None;
+    }
+
+    let elapsed_ms = now_ms.saturating_sub(signal.trigger_time).max(0);
+    let candles_ago = elapsed_ms / period_ms;
+    let active_index = CELL_COUNT - 1 - candles_ago;
+    if !(0..CELL_COUNT).contains(&active_index) {
+        return None;
+    }
+
+    Some(active_index as f32 / (CELL_COUNT - 1) as f32)
+}
+
+fn period_to_ms(period: &str) -> Option<i64> {
+    match period {
+        "W" => Some(7 * 24 * 60 * 60 * 1000),
+        "D" => Some(24 * 60 * 60 * 1000),
+        _ if period.ends_with('D') => period
+            .trim_end_matches('D')
+            .parse::<i64>()
+            .ok()
+            .map(|days| days * 24 * 60 * 60 * 1000),
+        _ => period
+            .parse::<i64>()
+            .ok()
+            .map(|minutes| minutes * 60 * 1000),
     }
 }
 

@@ -1,4 +1,4 @@
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -18,6 +18,8 @@ use slint::{
     VecModel, Weak,
 };
 
+#[cfg(target_os = "windows")]
+use slint::winit_030::winit::platform::windows::WindowAttributesExtWindows;
 #[cfg(target_os = "windows")]
 use slint::winit_030::winit::platform::windows::WindowExtWindows;
 #[cfg(target_os = "windows")]
@@ -171,21 +173,19 @@ impl UiBridge {
         }
     }
 
-    fn mark_signal_read_at(&self, index: i32) {
+    fn toggle_signal_read_at(&self, index: i32) {
         if index < 0 {
             return;
         }
 
-        let signal_keys = {
+        let toggle_action = {
             let mut state = self.state.lock().expect("state poisoned");
-            state.activate_row_at(index as usize)
+            state.toggle_signal_row_at(index as usize)
         };
 
-        if !signal_keys.is_empty() {
+        if let Some((signal_key, read)) = toggle_action {
             self.refresh_ui();
-            for signal_key in signal_keys {
-                self.runtime.request_mark_read(signal_key, true);
-            }
+            self.runtime.request_mark_read(signal_key, read);
         }
     }
 
@@ -214,10 +214,22 @@ impl UiBridge {
 }
 
 pub fn run() -> Result<(), Box<dyn std::error::Error>> {
+    #[cfg(target_os = "windows")]
+    let widget_owner = Rc::new(Cell::new(None::<isize>));
+    configure_winit_backend(
+        #[cfg(target_os = "windows")]
+        widget_owner.clone(),
+    )?;
+
     let initial_snapshot = crate::runtime::load_runtime_snapshot();
     let state = Arc::new(Mutex::new(AppState::new(initial_snapshot)));
 
     let main_window = MainWindow::new()?;
+    apply_snapshot_to_main(&main_window, &state.lock().expect("state poisoned").snapshot());
+    main_window.show()?;
+    #[cfg(target_os = "windows")]
+    remember_main_window_handle(&main_window, &widget_owner);
+
     let widget_window = WidgetWindow::new()?;
 
     let runtime_state = state.clone();
@@ -283,13 +295,45 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
     let _tray = install_tray_bridge(bridge.clone())?;
 
     bridge.refresh_ui();
-    main_window.show()?;
     widget_window.show()?;
     configure_widget_window(&widget_window);
     position_widget_window(&widget_window, &widget_controller);
 
     slint::run_event_loop_until_quit()?;
     Ok(())
+}
+
+fn configure_winit_backend(
+    #[cfg(target_os = "windows")] widget_owner: Rc<Cell<Option<isize>>>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let mut backend = slint::BackendSelector::new().backend_name("winit".into());
+
+    #[cfg(target_os = "windows")]
+    {
+        backend = backend.with_winit_window_attributes_hook(move |attributes| {
+            if let Some(hwnd) = widget_owner.get() {
+                attributes.with_owner_window(hwnd as _).with_skip_taskbar(true)
+            } else {
+                attributes
+            }
+        });
+    }
+
+    backend.select()?;
+    Ok(())
+}
+
+#[cfg(target_os = "windows")]
+fn remember_main_window_handle(main_window: &MainWindow, widget_owner: &Rc<Cell<Option<isize>>>) {
+    let _ = main_window
+        .window()
+        .with_winit_window(|window: &winit::window::Window| {
+            if let Ok(handle) = window.window_handle() {
+                if let RawWindowHandle::Win32(win32) = handle.as_raw() {
+                    widget_owner.set(Some(win32.hwnd.get() as isize));
+                }
+            }
+        });
 }
 
 fn install_tray_bridge(bridge: UiBridge) -> Result<TrayHandles, Box<dyn std::error::Error>> {
@@ -380,9 +424,9 @@ fn wire_main_window(main_window: &MainWindow, bridge: UiBridge) {
         let _ = slint::quit_event_loop();
     });
 
-    let mark_read_bridge = bridge.clone();
-    main_window.on_activate_signal(move |index| {
-        mark_read_bridge.mark_signal_read_at(index);
+    let toggle_signal_bridge = bridge.clone();
+    main_window.on_toggle_signal_read(move |index| {
+        toggle_signal_bridge.toggle_signal_read_at(index);
     });
 
     let close_bridge = bridge;
@@ -620,6 +664,9 @@ fn apply_snapshot_to_main(main_window: &MainWindow, snapshot: &UiSnapshot) {
             unread: row.unread,
             pending: row.pending,
             unread_count: row.unread_count,
+            timeline_visible: row.timeline_visible,
+            timeline_ratio: row.timeline_ratio,
+            timeline_positive: row.timeline_positive,
         })
         .collect();
     main_window.set_signal_rows(VecModel::from_slice(&signal_rows));

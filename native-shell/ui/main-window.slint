@@ -7,6 +7,9 @@ export struct SignalRowData {
     unread: bool,
     pending: bool,
     unread_count: int,
+    timeline_visible: bool,
+    timeline_ratio: float,
+    timeline_positive: bool,
 }
 
 component PlainButton inherits Rectangle {
@@ -175,7 +178,7 @@ export component MainWindow inherits Window {
     callback hide-main();
     callback save-config();
     callback quit-app();
-    callback activate-signal(int);
+    callback toggle-signal-read(int);
 
     VerticalBox {
         padding: 2px;
@@ -399,22 +402,33 @@ export component MainWindow inherits Window {
                     height: 610px;
 
                     for signal-row[index] in root.signal-rows : Rectangle {
-                        height: signal-row.is_header ? 40px : 26px;
+                        height: signal-row.is_header ? 40px : 22px;
                         background: signal-row.is_header ? #f7f7f7 : #ffffff;
-                        border-width: 1px;
+                        border-width: 0px;
                         border-color: #e0e0e0;
 
                         TouchArea {
-                            clicked => {
-                                if (signal-row.is_header && !signal-row.pending &&
-                                        signal-row.unread_count > 0) {
-                                    root.activate-signal(index);
+                            clicked => {}
+                        }
+
+                        left-hit-area := Rectangle {
+                            x: 0px;
+                            y: 0px;
+                            width: signal-row.is_header ? 0px : 40px;
+                            height: parent.height;
+                            background: left-hit-touch.has-hover ? #f3f3f3 : transparent;
+                            visible: !signal-row.is_header;
+
+                            left-hit-touch := TouchArea {
+                                mouse-cursor: pointer;
+                                clicked => {
+                                    root.toggle-signal-read(index);
                                 }
                             }
                         }
 
                         Rectangle {
-                            x: 8px;
+                            x: 2px;
                             y: 10px;
                             width: 6px;
                             height: 6px;
@@ -426,11 +440,13 @@ export component MainWindow inherits Window {
                         }
 
                         Text {
-                            x: signal-row.is_header ? 6px : 18px;
+                            x: signal-row.is_header ? 6px : 8px;
                             y: signal-row.is_header ? 4px : 4px;
-                            width: signal-row.is_header ? 64px : 40px;
+                            width: signal-row.is_header ? 64px : 32px;
                             text: signal-row.title;
-                            color: #202020;
+                            color: signal-row.is_header ? #202020
+                                : signal-row.unread ? #d99500
+                                : #202020;
                             font-size: signal-row.is_header ? 15px : 12px;
                             font-weight: signal-row.is_header ? 600 : (signal-row.unread ? 600 : 400);
                             overflow: elide;
@@ -460,22 +476,29 @@ export component MainWindow inherits Window {
                         Text {
                             x: signal-row.is_header ? 6px : 58px;
                             y: signal-row.is_header ? 22px : 4px;
-                            width: signal-row.is_header ? parent.width - 86px : parent.width - 72px;
+                            width: signal-row.is_header ? parent.width - 86px : 0px;
                             text: signal-row.meta;
                             color: signal-row.unread ? #404040 : #707070;
                             font-size: signal-row.is_header ? 11px : 10px;
                             overflow: elide;
+                            visible: signal-row.is_header;
                         }
 
-                        Text {
-                            x: parent.width - 48px;
+                        Rectangle {
+                            x: signal-row.is_header ? parent.width - 92px : 40px;
                             y: signal-row.is_header ? 10px : 4px;
-                            width: 42px;
-                            text: "";
-                            color: signal-row.unread ? #202020 : #808080;
-                            font-size: 11px;
-                            font-weight: 600;
-                            horizontal-alignment: right;
+                            width: signal-row.is_header ? 74px : parent.width - 50px;
+                            height: 18px;
+                            background: signal-row.is_header ? transparent : #edf0f4;
+                            visible: !signal-row.is_header && signal-row.timeline_visible;
+
+                            Rectangle {
+                                x: signal-row.timeline_ratio * (parent.width - self.width);
+                                y: 0px;
+                                width: 4px;
+                                height: parent.height;
+                                background: signal-row.timeline_positive ? #34d399 : #ef4444;
+                            }
                         }
                     }
                 }

@@ -124,3 +124,134 @@ fn signal_rows_no_longer_mark_single_items_as_read() {
     assert_eq!(after.signal_rows[0].unread_count, 2);
     assert_eq!(after.unread_count, 2);
 }
+
+#[test]
+fn signal_rows_expose_timeline_marker_ratio_for_recent_events() {
+    let mut runtime_snapshot = runtime_snapshot_from_config(AppConfig {
+        groups: vec![WatchGroup::default()],
+        ..Default::default()
+    });
+
+    let now_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as i64;
+
+    runtime_snapshot.signals[0].group_name = "BTC Main".into();
+    runtime_snapshot.signals[0].signal_type = "divMacd".into();
+    runtime_snapshot.signals[0].period = "60".into();
+    runtime_snapshot.signals[0].trigger_time = now_ms - 2 * 60 * 60 * 1000;
+
+    let snapshot = AppState::new(runtime_snapshot).snapshot();
+    let signal_row = &snapshot.signal_rows[1];
+
+    assert!(signal_row.timeline_visible);
+    assert!((signal_row.timeline_ratio - (57.0 / 59.0)).abs() < 0.05);
+}
+
+#[test]
+fn signal_rows_expose_timeline_direction_for_short_signals() {
+    let mut runtime_snapshot = runtime_snapshot_from_config(AppConfig {
+        groups: vec![WatchGroup::default()],
+        ..Default::default()
+    });
+
+    let now_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as i64;
+
+    runtime_snapshot.signals[0].group_name = "BTC Main".into();
+    runtime_snapshot.signals[0].signal_type = "divMacd".into();
+    runtime_snapshot.signals[0].period = "60".into();
+    runtime_snapshot.signals[0].trigger_time = now_ms - 60 * 60 * 1000;
+    runtime_snapshot.signals[0].side = -1;
+
+    let snapshot = AppState::new(runtime_snapshot).snapshot();
+    let signal_row = &snapshot.signal_rows[1];
+
+    assert!(signal_row.timeline_visible);
+    assert!(!signal_row.timeline_positive);
+}
+
+#[test]
+fn signal_rows_follow_configured_period_order() {
+    let config = AppConfig {
+        groups: vec![WatchGroup {
+            periods: vec!["10D".into(), "W".into(), "60".into(), "15".into(), "1".into()],
+            ..WatchGroup::default()
+        }],
+        ..Default::default()
+    };
+    let mut runtime_snapshot = runtime_snapshot_from_config(config);
+
+    runtime_snapshot.signals[0].period = "10D".into();
+    runtime_snapshot.signals[1].period = "W".into();
+    runtime_snapshot.signals[2].period = "60".into();
+    runtime_snapshot.signals[3].period = "15".into();
+    runtime_snapshot.signals[4].period = "1".into();
+
+    runtime_snapshot.signals[0].trigger_time = 1;
+    runtime_snapshot.signals[1].trigger_time = 5;
+    runtime_snapshot.signals[2].trigger_time = 4;
+    runtime_snapshot.signals[3].trigger_time = 3;
+    runtime_snapshot.signals[4].trigger_time = 2;
+
+    let snapshot = AppState::new(runtime_snapshot).snapshot();
+
+    assert_eq!(snapshot.signal_rows[1].title, "10D");
+    assert_eq!(snapshot.signal_rows[2].title, "W");
+    assert_eq!(snapshot.signal_rows[3].title, "60");
+    assert_eq!(snapshot.signal_rows[4].title, "15");
+    assert_eq!(snapshot.signal_rows[5].title, "1");
+}
+
+#[test]
+fn signal_rows_toggle_single_item_read_state() {
+    let mut runtime_snapshot = runtime_snapshot_from_config(AppConfig {
+        groups: vec![WatchGroup::default()],
+        ..Default::default()
+    });
+
+    runtime_snapshot.signals[0].group_name = "BTC Main".into();
+    runtime_snapshot.signals[0].signal_type = "divMacd".into();
+    runtime_snapshot.signals[0].period = "60".into();
+    runtime_snapshot.signals[0].unread = true;
+
+    runtime_snapshot.unread_count = 1;
+
+    let mut state = AppState::new(runtime_snapshot);
+    let mark_read = state.toggle_signal_row_at(1);
+    let after_read = state.snapshot();
+
+    assert_eq!(
+        mark_read,
+        Some((
+            signal_desk_native::runtime::SignalMutationInput {
+                group_id: "group-1".into(),
+                signal_type: "divMacd".into(),
+                period: "60".into(),
+            },
+            true,
+        ))
+    );
+    assert!(!after_read.signal_rows[1].unread);
+    assert_eq!(after_read.unread_count, 0);
+
+    let mark_unread = state.toggle_signal_row_at(1);
+    let after_unread = state.snapshot();
+
+    assert_eq!(
+        mark_unread,
+        Some((
+            signal_desk_native::runtime::SignalMutationInput {
+                group_id: "group-1".into(),
+                signal_type: "divMacd".into(),
+                period: "60".into(),
+            },
+            false,
+        ))
+    );
+    assert!(after_unread.signal_rows[1].unread);
+    assert_eq!(after_unread.unread_count, 1);
+}
