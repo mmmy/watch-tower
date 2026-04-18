@@ -39,3 +39,4 @@ Thumbs.db
 package-lock.json
 .vscode
 Cargo.lock
+.worktrees
