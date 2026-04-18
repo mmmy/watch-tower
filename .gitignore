@@ -43,3 +43,4 @@ package-lock.json
 .vscode
 Cargo.lock
 target-codex
+.worktrees
