@@ -417,12 +417,33 @@ export component MainWindow inherits Window {
                         Text {
                             x: 6px;
                             y: signal-row.is_header ? 4px : 4px;
-                            width: signal-row.is_header ? parent.width - 62px : 48px;
+                            width: signal-row.is_header ? 72px : 48px;
                             text: signal-row.title;
                             color: #202020;
                             font-size: signal-row.is_header ? 15px : 12px;
                             font-weight: signal-row.is_header ? 600 : (signal-row.unread ? 600 : 400);
                             overflow: elide;
+                        }
+
+                        Rectangle {
+                            x: 80px;
+                            y: 6px;
+                            width: signal-row.pending ? 24px : (signal-row.unread_count > 9 ? 24px : 18px);
+                            height: 16px;
+                            visible: signal-row.is_header && (signal-row.pending || signal-row.unread_count > 0);
+                            border-width: 1px;
+                            border-color: #d3a000;
+                            background: #ffd24d;
+
+                            Text {
+                                y: 2px;
+                                width: parent.width;
+                                text: signal-row.pending ? "..." : signal-row.unread_count;
+                                color: #202020;
+                                font-size: 10px;
+                                font-weight: 600;
+                                horizontal-alignment: center;
+                            }
                         }
 
                         Text {
@@ -440,7 +461,7 @@ export component MainWindow inherits Window {
                             y: signal-row.is_header ? 10px : 4px;
                             width: 42px;
                             text: signal-row.is_header
-                                ? (signal-row.pending ? "..." : signal-row.unread_count)
+                                ? ""
                                 : (signal-row.pending ? "..." : (signal-row.unread ? "新" : ""));
                             color: signal-row.unread ? #202020 : #808080;
                             font-size: 11px;
