@@ -335,11 +335,31 @@ export component MainWindow inherits Window {
             border-color: #c8c8c8;
             background: #f8f8f8;
 
-            Text {
+            Rectangle {
                 x: 6px;
+                y: 4px;
+                width: 42px;
+                height: 18px;
+                border-width: root.unread-count > 0 ? 1px : 0px;
+                border-color: #d3a000;
+                background: root.unread-count > 0 ? #ffd24d : #f8f8f8;
+
+                Text {
+                    y: 3px;
+                    width: parent.width;
+                    text: root.unread-count;
+                    color: #202020;
+                    font-size: 12px;
+                    font-weight: root.unread-count > 0 ? 600 : 400;
+                    horizontal-alignment: center;
+                }
+            }
+
+            Text {
+                x: 54px;
                 y: 6px;
-                width: parent.width - 12px;
-                text: root.unread-count + " | " + root.stats-quaternary + " | " + root.connection-label + " | " + root.status-text;
+                width: parent.width - 60px;
+                text: root.stats-quaternary + " | " + root.connection-label + " | " + root.status-text;
                 color: #404040;
                 font-size: 12px;
                 overflow: elide;

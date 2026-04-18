@@ -85,10 +85,7 @@ impl AppState {
         let status_text = if let Some(error) = &self.last_error {
             format!("轮询失败：{}", error)
         } else {
-            format!(
-                "轮询进行中 · Tick {} · {} 条未读",
-                self.runtime_snapshot.last_tick, self.runtime_snapshot.unread_count
-            )
+            format!("Tick {}", self.runtime_snapshot.last_tick)
         };
 
         let refresh_label = format!(
@@ -361,9 +358,8 @@ fn format_timestamp(timestamp_ms: i64) -> String {
     let seconds = total_seconds.rem_euclid(60);
     let minutes = (total_seconds / 60).rem_euclid(60);
     let hours = (total_seconds / 3600).rem_euclid(24);
-    let days = total_seconds / 86_400;
 
-    format!("d{} {:02}:{:02}:{:02}", days, hours, minutes, seconds)
+    format!("{:02}:{:02}:{:02}", hours, minutes, seconds)
 }
 
 struct ConnectionState<'a> {
