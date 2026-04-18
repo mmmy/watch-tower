@@ -1,11 +1,11 @@
-use std::collections::{HashMap, HashSet};
-use std::fs;
-use std::path::{Path, PathBuf};
+use std::collections::HashMap;
+use std::path::Path;
 use std::sync::mpsc::{self, RecvTimeoutError, Sender};
 use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+use crate::config;
 use reqwest::blocking::Client;
 use serde::{Deserialize, Serialize};
 
@@ -192,6 +192,12 @@ pub enum RuntimeCommand {
         input: SignalMutationInput,
         read: bool,
     },
+    SetAlwaysOnTop(bool),
+    SetEdgeMode(bool),
+    SetEdgeWidth(f64),
+    SetNotifications(bool),
+    SetSound(bool),
+    SaveConfig,
     Quit,
 }
 
@@ -213,6 +219,32 @@ impl RuntimeHandles {
         let _ = self
             .command_tx
             .send(RuntimeCommand::MarkSignalRead { input, read });
+    }
+
+    pub fn request_set_always_on_top(&self, pinned: bool) {
+        let _ = self.command_tx.send(RuntimeCommand::SetAlwaysOnTop(pinned));
+    }
+
+    pub fn request_set_edge_mode(&self, enabled: bool) {
+        let _ = self.command_tx.send(RuntimeCommand::SetEdgeMode(enabled));
+    }
+
+    pub fn request_set_edge_width(&self, width: f64) {
+        let _ = self.command_tx.send(RuntimeCommand::SetEdgeWidth(width));
+    }
+
+    pub fn request_set_notifications(&self, enabled: bool) {
+        let _ = self
+            .command_tx
+            .send(RuntimeCommand::SetNotifications(enabled));
+    }
+
+    pub fn request_set_sound(&self, enabled: bool) {
+        let _ = self.command_tx.send(RuntimeCommand::SetSound(enabled));
+    }
+
+    pub fn request_save_config(&self) {
+        let _ = self.command_tx.send(RuntimeCommand::SaveConfig);
     }
 }
 
@@ -276,10 +308,92 @@ impl RuntimeStore {
 
         false
     }
+
+    fn config_for_persistence(&self) -> AppConfig {
+        let mut config = self.config.clone();
+        config.ui.always_on_top = self.always_on_top;
+        config.ui.edge_mode = self.edge_mode;
+        config
+    }
+}
+
+pub struct RuntimeModel {
+    store: RuntimeStore,
+}
+
+impl RuntimeModel {
+    pub fn new(config: AppConfig) -> Self {
+        Self {
+            store: RuntimeStore::new(config),
+        }
+    }
+
+    pub fn load() -> Self {
+        Self::new(config::load_config())
+    }
+
+    pub fn snapshot(&self) -> RuntimeSnapshot {
+        self.store.snapshot()
+    }
+
+    pub fn refresh_from_api(&mut self) -> Result<RuntimeSnapshot, String> {
+        refresh_runtime_from_api(&mut self.store)
+    }
+
+    pub fn mark_signal_read_remote(
+        &mut self,
+        input: &SignalMutationInput,
+        read: bool,
+    ) -> Result<RuntimeSnapshot, String> {
+        mark_signal_read_remote(&mut self.store, input, read)
+    }
+
+    pub fn set_always_on_top(&mut self, pinned: bool) -> RuntimeSnapshot {
+        self.store.always_on_top = pinned;
+        self.store.config.ui.always_on_top = pinned;
+        self.store.snapshot()
+    }
+
+    pub fn set_edge_mode(&mut self, enabled: bool) -> RuntimeSnapshot {
+        self.store.edge_mode = enabled;
+        self.store.config.ui.edge_mode = enabled;
+        self.store.snapshot()
+    }
+
+    pub fn set_edge_width(&mut self, width: f64) -> RuntimeSnapshot {
+        self.store.config.ui.edge_width = width.clamp(160.0, 480.0);
+        self.store.snapshot()
+    }
+
+    pub fn set_notifications(&mut self, enabled: bool) -> RuntimeSnapshot {
+        self.store.config.ui.notifications = enabled;
+        self.store.snapshot()
+    }
+
+    pub fn set_sound(&mut self, enabled: bool) -> RuntimeSnapshot {
+        self.store.config.ui.sound = enabled;
+        self.store.snapshot()
+    }
+
+    pub fn save_config(&mut self) -> Result<RuntimeSnapshot, String> {
+        let path = config::resolve_config_path_for_write();
+        self.save_config_to_path(&path)
+    }
+
+    pub fn save_config_to_path(&mut self, path: &Path) -> Result<RuntimeSnapshot, String> {
+        let config = self.store.config_for_persistence();
+        config::save_config_to_path(&config, path)?;
+        self.store.config = config;
+        Ok(self.store.snapshot())
+    }
+}
+
+pub fn runtime_snapshot_from_config(config: AppConfig) -> RuntimeSnapshot {
+    RuntimeStore::new(config).snapshot()
 }
 
 pub fn load_runtime_snapshot() -> RuntimeSnapshot {
-    RuntimeStore::new(load_config()).snapshot()
+    RuntimeModel::load().snapshot()
 }
 
 pub fn spawn_runtime_loop<F, E>(on_snapshot: F, on_error: E) -> RuntimeHandles
@@ -292,24 +406,43 @@ where
     let on_error = Arc::new(on_error);
 
     thread::spawn(move || {
-        let mut store = RuntimeStore::new(load_config());
-        on_snapshot(store.snapshot());
+        let mut runtime = RuntimeModel::load();
+        on_snapshot(runtime.snapshot());
 
         loop {
-            match refresh_runtime_from_api(&mut store) {
+            match runtime.refresh_from_api() {
                 Ok(snapshot) => on_snapshot(snapshot),
                 Err(error) => on_error(error),
             }
 
-            let wait_for = Duration::from_secs(store.config.poll.interval_secs.max(1));
+            let wait_for = Duration::from_secs(runtime.snapshot().config.poll.interval_secs.max(1));
             match rx.recv_timeout(wait_for) {
                 Ok(RuntimeCommand::RefreshNow) => {}
                 Ok(RuntimeCommand::MarkSignalRead { input, read }) => {
-                    match mark_signal_read_remote(&mut store, &input, read) {
+                    match runtime.mark_signal_read_remote(&input, read) {
                         Ok(snapshot) => on_snapshot(snapshot),
                         Err(error) => on_error(error),
                     }
                 }
+                Ok(RuntimeCommand::SetAlwaysOnTop(pinned)) => {
+                    on_snapshot(runtime.set_always_on_top(pinned));
+                }
+                Ok(RuntimeCommand::SetEdgeMode(enabled)) => {
+                    on_snapshot(runtime.set_edge_mode(enabled));
+                }
+                Ok(RuntimeCommand::SetEdgeWidth(width)) => {
+                    on_snapshot(runtime.set_edge_width(width));
+                }
+                Ok(RuntimeCommand::SetNotifications(enabled)) => {
+                    on_snapshot(runtime.set_notifications(enabled));
+                }
+                Ok(RuntimeCommand::SetSound(enabled)) => {
+                    on_snapshot(runtime.set_sound(enabled));
+                }
+                Ok(RuntimeCommand::SaveConfig) => match runtime.save_config() {
+                    Ok(snapshot) => on_snapshot(snapshot),
+                    Err(error) => on_error(error),
+                },
                 Ok(RuntimeCommand::Quit) | Err(RecvTimeoutError::Disconnected) => break,
                 Err(RecvTimeoutError::Timeout) => {}
             }
@@ -337,61 +470,6 @@ where
         serde_json::Value::Null => Ok(String::new()),
         other => Ok(other.to_string().trim_matches('"').to_string()),
     }
-}
-
-fn default_config() -> AppConfig {
-    AppConfig {
-        groups: vec![WatchGroup::default()],
-        ..Default::default()
-    }
-}
-
-fn push_config_candidates(candidates: &mut Vec<PathBuf>, base: PathBuf) {
-    let mut current = Some(base.as_path());
-    let mut depth = 0;
-
-    while let Some(path) = current {
-        candidates.push(path.join("config.yaml"));
-        candidates.push(path.join("config.yaml.example"));
-        current = path.parent();
-        depth += 1;
-
-        if depth >= 8 {
-            break;
-        }
-    }
-}
-
-fn resolve_config_candidates() -> Vec<PathBuf> {
-    let mut candidates = Vec::new();
-
-    if let Ok(current) = std::env::current_dir() {
-        push_config_candidates(&mut candidates, current);
-    }
-
-    if let Ok(exe) = std::env::current_exe() {
-        if let Some(parent) = exe.parent() {
-            push_config_candidates(&mut candidates, parent.to_path_buf());
-        }
-    }
-
-    let mut seen = HashSet::new();
-    candidates
-        .into_iter()
-        .filter(|candidate| seen.insert(candidate.clone()))
-        .collect()
-}
-
-fn load_config() -> AppConfig {
-    for candidate in resolve_config_candidates() {
-        if let Ok(content) = fs::read_to_string(&candidate) {
-            if let Ok(config) = serde_yaml::from_str::<AppConfig>(&content) {
-                return config;
-            }
-        }
-    }
-
-    default_config()
 }
 
 fn seed_signals(config: &AppConfig) -> Vec<RuntimeSignal> {
@@ -503,8 +581,12 @@ fn fetch_runtime_signals(config: &AppConfig) -> Result<Vec<RuntimeSignal>, Strin
             page_size: config.poll.page_size,
         };
 
-        let response: SignalListResponse =
-            post_json(&client, config, "/api/open/watch-list/symbol-signals", &request)?;
+        let response: SignalListResponse = post_json(
+            &client,
+            config,
+            "/api/open/watch-list/symbol-signals",
+            &request,
+        )?;
 
         for item in response.data {
             for (signal_type, detail) in item.signals {
@@ -574,9 +656,5 @@ fn mark_signal_read_remote(
 }
 
 pub fn config_location_hint() -> String {
-    resolve_config_candidates()
-        .into_iter()
-        .find(|path| Path::new(path).exists())
-        .map(|path| path.display().to_string())
-        .unwrap_or_else(|| "config.yaml.example not found".to_string())
+    config::config_location_hint()
 }

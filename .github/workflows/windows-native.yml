@@ -1,0 +1,37 @@
+name: Windows Native CI
+
+on:
+  push:
+    branches:
+      - main
+      - codex/**
+  pull_request:
+
+jobs:
+  native-shell:
+    name: Native Shell Checks
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+
+      - name: Cache Cargo artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            native-shell -> target
+
+      - name: Rustfmt
+        run: cargo fmt --manifest-path native-shell/Cargo.toml --all -- --check
+
+      - name: Cargo check
+        run: cargo check --manifest-path native-shell/Cargo.toml --tests
+
+      - name: Cargo test
+        run: cargo test --manifest-path native-shell/Cargo.toml

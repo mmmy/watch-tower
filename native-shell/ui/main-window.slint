@@ -1,4 +1,4 @@
-import { Button, HorizontalBox, ListView, ScrollView, VerticalBox } from "std-widgets.slint";
+import { HorizontalBox, ListView, VerticalBox } from "std-widgets.slint";
 
 export struct SignalRowData {
     title: string,
@@ -6,425 +6,403 @@ export struct SignalRowData {
     is_header: bool,
     unread: bool,
     pending: bool,
+    unread_count: int,
+}
+
+component PlainButton inherits Rectangle {
+    in property <string> text;
+    callback clicked();
+
+    min-width: 34px;
+    height: 22px;
+    border-width: 1px;
+    border-color: #b8b8b8;
+    background: #f6f6f6;
+
+    TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+
+    Text {
+        x: 8px;
+        y: 4px;
+        width: parent.width - 16px;
+        text: root.text;
+        color: #202020;
+        font-size: 11px;
+        horizontal-alignment: center;
+        overflow: elide;
+    }
+}
+
+component MoreButton inherits Rectangle {
+    in property <string> text;
+    callback clicked();
+
+    width: 24px;
+    height: 18px;
+    border-width: 1px;
+    border-color: #b8b8b8;
+    background: #f6f6f6;
+
+    TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+
+    Text {
+        y: 2px;
+        width: parent.width;
+        text: root.text;
+        color: #202020;
+        font-size: 9px;
+        horizontal-alignment: center;
+        overflow: elide;
+    }
+}
+
+component PlainCheckBox inherits Rectangle {
+    in property <string> text;
+    in-out property <bool> checked;
+    callback toggled();
+
+    min-width: 44px;
+    height: 18px;
+    background: transparent;
+
+    TouchArea {
+        clicked => {
+            root.checked = !root.checked;
+            root.toggled();
+        }
+    }
+
+    Rectangle {
+        x: 0px;
+        y: 3px;
+        width: 11px;
+        height: 11px;
+        border-width: 1px;
+        border-color: #7a7a7a;
+        background: root.checked ? #dcdcdc : #ffffff;
+
+        if root.checked : Text {
+            x: 1px;
+            y: -3px;
+            width: parent.width;
+            text: "√";
+            color: #202020;
+            font-size: 10px;
+            horizontal-alignment: center;
+        }
+    }
+
+    Text {
+        x: 15px;
+        y: 1px;
+        width: parent.width - 15px;
+        text: root.text;
+        color: #202020;
+        font-size: 11px;
+        overflow: elide;
+    }
 }
 
 export component MainWindow inherits Window {
     title: "Signal Desk Native";
-    preferred-width: 560px;
-    preferred-height: 760px;
-    min-width: 380px;
-    min-height: 520px;
-    background: #0f172a;
+    preferred-width: 420px;
+    preferred-height: 700px;
+    min-width: 340px;
+    min-height: 500px;
+    background: #f3f3f3;
 
     in-out property <int> unread-count: 0;
     in-out property <string> status-text: "Ready";
     in-out property <string> refresh-label: "No refresh action yet";
     in-out property <string> runtime-summary: "Runtime not connected";
+    in-out property <string> save-hint: "No save activity yet";
+    in-out property <string> connection-label: "Unknown";
+    in-out property <string> connection-tone: "offline";
     in-out property <string> stats-primary: "0 enabled group(s)";
     in-out property <string> stats-secondary: "0 section(s)";
     in-out property <string> stats-tertiary: "Tick 0 @ 0s poll";
     in-out property <string> stats-quaternary: "Updated n/a";
+    in-out property <string> edge-width-label: "120 px";
     in-out property <[SignalRowData]> signal-rows: [];
     in-out property <bool> main-visible: true;
     in-out property <bool> widget-visible: true;
+    in-out property <bool> pin-enabled: true;
+    in-out property <bool> edge-mode: false;
+    in-out property <bool> notifications-enabled: true;
+    in-out property <bool> sound-enabled: true;
+    in-out property <bool> more-open: false;
 
+    callback toggle-always-on-top();
+    callback toggle-edge-mode();
+    callback adjust-edge-width(int);
+    callback toggle-notifications();
+    callback toggle-sound();
     callback toggle-widget();
     callback refresh-data();
     callback hide-main();
+    callback save-config();
+    callback quit-app();
     callback activate-signal(int);
 
     VerticalBox {
-        padding: 20px;
-        spacing: 16px;
+        padding: 2px;
+        spacing: 2px;
 
         Rectangle {
-            height: 138px;
-            border-radius: 18px;
-            background: #111827;
+            height: 30px;
+            border-width: 1px;
+            border-color: #c8c8c8;
+            background: #efefef;
 
-                VerticalLayout {
-                    padding: 18px;
-                    spacing: 10px;
-
-                    Text {
-                        text: "Signal Desk";
-                        color: #f8fafc;
-                        font-size: 28px;
-                        font-weight: 700;
-                    }
-
-                    Text {
-                        text: root.status-text;
-                        color: #cbd5e1;
-                        font-size: 15px;
-                    }
-
-                    HorizontalBox {
-                        spacing: 12px;
-
-                        Rectangle {
-                            border-radius: 999px;
-                            background: #1d4ed8;
-                            min-width: 120px;
-                            min-height: 40px;
-
-                            HorizontalLayout {
-                                padding-left: 14px;
-                                padding-right: 14px;
-                                alignment: center;
-
-                                Text {
-                                    text: "Unread " + root.unread-count;
-                                    color: #eff6ff;
-                                    font-size: 16px;
-                                    font-weight: 600;
-                                }
-                            }
-                        }
-
-                        Rectangle {
-                            border-radius: 999px;
-                            background: root.widget-visible ? #14532d : #3f3f46;
-                            min-width: 150px;
-                            min-height: 40px;
-
-                            HorizontalLayout {
-                                padding-left: 14px;
-                                padding-right: 14px;
-                                alignment: center;
-
-                                Text {
-                                    text: root.widget-visible ? "Widget visible" : "Widget hidden";
-                                    color: #f8fafc;
-                                    font-size: 15px;
-                                }
-                            }
-                        }
-                    }
+            PlainCheckBox {
+                x: 6px;
+                y: 5px;
+                width: 40px;
+                text: "置顶";
+                checked <=> root.pin-enabled;
+                toggled => {
+                    root.toggle-always-on-top();
                 }
             }
 
-        Rectangle {
-            border-radius: 18px;
-            background: #111827;
-
-                VerticalLayout {
-                    padding: 18px;
-                    spacing: 14px;
-
-                    Text {
-                        text: "Architecture Spike";
-                        color: #f8fafc;
-                        font-size: 20px;
-                        font-weight: 600;
-                    }
-
-                    Text {
-                        text: root.refresh-label;
-                        color: #94a3b8;
-                        font-size: 14px;
-                        wrap: word-wrap;
-                    }
-
-                    Text {
-                        text: root.runtime-summary;
-                        color: #cbd5e1;
-                        wrap: word-wrap;
-                        font-size: 14px;
-                    }
-
-                    HorizontalBox {
-                        spacing: 12px;
-
-                        Button {
-                            text: "Refresh Signals";
-                            clicked => {
-                                root.refresh-data();
-                            }
-                        }
-
-                        Button {
-                            text: root.widget-visible ? "Hide Widget" : "Show Widget";
-                            clicked => {
-                                root.toggle-widget();
-                            }
-                        }
-
-                        Button {
-                            text: "Hide Main";
-                            clicked => {
-                                root.hide-main();
-                            }
-                        }
-                    }
+            PlainCheckBox {
+                x: 52px;
+                y: 5px;
+                width: 72px;
+                text: "贴边模式";
+                checked <=> root.edge-mode;
+                toggled => {
+                    root.toggle-edge-mode();
                 }
             }
 
-        ScrollView {
-            vertical-scrollbar-policy: ScrollBarPolicy.as-needed;
-            horizontal-scrollbar-policy: ScrollBarPolicy.as-needed;
+            PlainCheckBox {
+                x: 130px;
+                y: 5px;
+                width: 40px;
+                text: "通知";
+                checked <=> root.notifications-enabled;
+                toggled => {
+                    root.toggle-notifications();
+                }
+            }
 
-            VerticalBox {
-                spacing: 16px;
+            PlainCheckBox {
+                x: 176px;
+                y: 5px;
+                width: 40px;
+                text: "声音";
+                checked <=> root.sound-enabled;
+                toggled => {
+                    root.toggle-sound();
+                }
+            }
 
-                Rectangle {
-                    border-radius: 18px;
-                    background: #111827;
+            MoreButton {
+                x: parent.width - self.width - 6px;
+                y: 5px;
+                text: root.more-open ? "收起" : "更多";
+                clicked => {
+                    root.more-open = !root.more-open;
+                }
+            }
+        }
 
-                    VerticalLayout {
-                        padding: 18px;
-                        spacing: 10px;
+        if root.more-open : Rectangle {
+            height: 54px;
+            border-width: 1px;
+            border-color: #c8c8c8;
+            background: #f8f8f8;
 
-                        Text {
-                            text: "Runtime Stats";
-                            color: #f8fafc;
-                            font-size: 18px;
-                            font-weight: 600;
+            VerticalLayout {
+                padding-left: 6px;
+                padding-right: 6px;
+                padding-top: 2px;
+                padding-bottom: 2px;
+                spacing: 2px;
+
+                HorizontalBox {
+                    spacing: 6px;
+
+                    PlainButton {
+                        text: "刷新";
+                        clicked => {
+                            root.more-open = false;
+                            root.refresh-data();
                         }
+                    }
 
-                        HorizontalBox {
-                            spacing: 12px;
-
-                            Rectangle {
-                                min-width: 112px;
-                                height: 72px;
-                                border-radius: 14px;
-                                background: #172033;
-
-                            VerticalLayout {
-                                padding: 12px;
-                                spacing: 4px;
-
-                                Text {
-                                    text: "Groups";
-                                    color: #94a3b8;
-                                    font-size: 11px;
-                                    font-weight: 600;
-                                }
-
-                                Text {
-                                    text: root.stats-primary;
-                                    color: #f8fafc;
-                                    font-size: 14px;
-                                    wrap: word-wrap;
-                                }
-                            }
+                    PlainButton {
+                        text: root.widget-visible ? "隐藏挂件" : "显示挂件";
+                        clicked => {
+                            root.more-open = false;
+                            root.toggle-widget();
                         }
+                    }
 
-                            Rectangle {
-                                min-width: 112px;
-                                height: 72px;
-                                border-radius: 14px;
-                                background: #172033;
+                    PlainButton {
+                        text: "收起主窗";
+                        clicked => {
+                            root.more-open = false;
+                            root.hide-main();
+                        }
+                    }
 
-                            VerticalLayout {
-                                padding: 12px;
-                                spacing: 4px;
+                    PlainButton {
+                        text: "保存";
+                        clicked => {
+                            root.more-open = false;
+                            root.save-config();
+                        }
+                    }
 
-                                Text {
-                                    text: "Sections";
-                                    color: #94a3b8;
-                                    font-size: 11px;
-                                    font-weight: 600;
-                                }
-
-                                Text {
-                                    text: root.stats-secondary;
-                                    color: #f8fafc;
-                                    font-size: 14px;
-                                    wrap: word-wrap;
-                                }
-                            }
+                    PlainButton {
+                        text: "退出";
+                        clicked => {
+                            root.more-open = false;
+                            root.quit-app();
                         }
                     }
                 }
 
-                        HorizontalBox {
-                            spacing: 12px;
+                HorizontalBox {
+                    spacing: 6px;
 
-                            Rectangle {
-                                min-width: 112px;
-                                height: 72px;
-                                border-radius: 14px;
-                                background: #172033;
+                    Text {
+                        text: "贴边宽度 " + root.edge-width-label;
+                        color: #404040;
+                        font-size: 11px;
+                        vertical-alignment: center;
+                    }
 
-                            VerticalLayout {
-                                padding: 12px;
-                                spacing: 4px;
-
-                                Text {
-                                    text: "Polling";
-                                    color: #94a3b8;
-                                    font-size: 11px;
-                                    font-weight: 600;
-                                }
-
-                                Text {
-                                    text: root.stats-tertiary;
-                                    color: #f8fafc;
-                                    font-size: 14px;
-                                    wrap: word-wrap;
-                                }
-                            }
-                        }
-
-                            Rectangle {
-                                min-width: 112px;
-                                height: 72px;
-                                border-radius: 14px;
-                                background: #172033;
-
-                            VerticalLayout {
-                                padding: 12px;
-                                spacing: 4px;
-
-                                Text {
-                                    text: "Last Update";
-                                    color: #94a3b8;
-                                    font-size: 11px;
-                                    font-weight: 600;
-                                }
-
-                                Text {
-                                    text: root.stats-quaternary;
-                                    color: #f8fafc;
-                                    font-size: 14px;
-                                    wrap: word-wrap;
-                                }
-                            }
+                    PlainButton {
+                        text: "-";
+                        clicked => {
+                            root.adjust-edge-width(-20);
                         }
                     }
-                }
 
-                        Text {
-                            text: "Quick Actions";
-                            color: #94a3b8;
-                            font-size: 11px;
-                            font-weight: 700;
-                        }
-
-                        HorizontalBox {
-                            spacing: 12px;
-
-                            Button {
-                                text: "Refresh Now";
-                                clicked => {
-                                    root.refresh-data();
-                                }
-                            }
-
-                            Button {
-                                text: root.widget-visible ? "Hide Widget" : "Show Widget";
-                                clicked => {
-                                    root.toggle-widget();
-                                }
-                            }
-
-                            Button {
-                                text: "Hide Main";
-                                clicked => {
-                                    root.hide-main();
-                                }
-                            }
-                        }
-                    }
-                }
-
-                Rectangle {
-                    border-radius: 18px;
-                    background: #111827;
-
-                    VerticalLayout {
-                        padding: 18px;
-                        spacing: 10px;
-
-                        Text {
-                            text: "Live Signals";
-                            color: #f8fafc;
-                            font-size: 18px;
-                            font-weight: 600;
-                        }
-
-                        Text {
-                            text: root.signal-rows.length + " signal row(s)";
-                            color: #94a3b8;
-                            font-size: 13px;
-                        }
-
-                        ListView {
-                            height: 260px;
-
-                            for signal-row[index] in root.signal-rows : Rectangle {
-                                height: signal-row.is_header ? 42px : 54px;
-                                background: signal-row.is_header
-                                    ? (Math.mod(index, 2) == 0 ? #0b1220 : #101826)
-                                    : signal-row.pending
-                                    ? #374151
-                                    : signal-row.unread
-                                    ? (Math.mod(index, 2) == 0 ? #17305f : #1d4ed8)
-                                    : (Math.mod(index, 2) == 0 ? #172033 : #111827);
-                                border-radius: signal-row.is_header ? 10px : 12px;
-                                border-width: signal-row.is_header ? 0px : (signal-row.pending || signal-row.unread ? 1px : 0px);
-                                border-color: signal-row.pending ? #d1d5db : (signal-row.unread ? #93c5fd : transparent);
-
-                            TouchArea {
-                                clicked => {
-                                    if (!signal-row.is_header && signal-row.unread && !signal-row.pending) {
-                                        root.activate-signal(index);
-                                    }
-                                }
-                            }
-
-                            Rectangle {
-                                x: 12px;
-                                y: 18px;
-                                width: 8px;
-                                height: 8px;
-                                border-radius: 4px;
-                                background: signal-row.is_header
-                                    ? #60a5fa
-                                    : (signal-row.pending ? #e5e7eb : (signal-row.unread ? #facc15 : #475569));
-                            }
-
-                            Text {
-                                x: 28px;
-                                y: signal-row.is_header ? 9px : 8px;
-                                width: parent.width - 40px;
-                                text: signal-row.title;
-                                color: signal-row.is_header
-                                    ? #bfdbfe
-                                    : (signal-row.pending ? #f9fafb : (signal-row.unread ? #f8fafc : #cbd5e1));
-                                font-size: signal-row.is_header ? 12px : 13px;
-                                font-weight: signal-row.is_header ? 700 : (signal-row.pending || signal-row.unread ? 650 : 500);
-                                overflow: elide;
-                            }
-
-                            Text {
-                                x: 28px;
-                                y: signal-row.is_header ? 22px : 29px;
-                                width: signal-row.is_header ? parent.width - 40px : parent.width - 40px;
-                                text: signal-row.meta;
-                                color: signal-row.is_header
-                                    ? #60a5fa
-                                    : (signal-row.pending ? #e5e7eb : (signal-row.unread ? #dbeafe : #64748b));
-                                font-size: signal-row.is_header ? 10px : 11px;
-                                overflow: elide;
-                            }
-
-                            Text {
-                                x: parent.width - 92px;
-                                y: 18px;
-                                width: 76px;
-                                text: signal-row.is_header ? "" : (signal-row.pending ? "Marking..." : (signal-row.unread ? "Mark Read" : "Read"));
-                                color: signal-row.pending ? #f9fafb : (signal-row.unread ? #fef3c7 : #475569);
-                                horizontal-alignment: right;
-                                font-size: 11px;
-                            }
+                    PlainButton {
+                        text: "+";
+                        clicked => {
+                            root.adjust-edge-width(20);
                         }
                     }
                 }
             }
         }
+
+        Rectangle {
+            height: 28px;
+            border-width: 1px;
+            border-color: #c8c8c8;
+            background: #f8f8f8;
+
+            Text {
+                x: 6px;
+                y: 6px;
+                width: parent.width - 12px;
+                text: root.unread-count + " | " + root.stats-quaternary + " | " + root.connection-label + " | " + root.status-text;
+                color: #404040;
+                font-size: 12px;
+                overflow: elide;
+            }
+        }
+
+        Rectangle {
+            border-width: 1px;
+            border-color: #c8c8c8;
+            background: #ffffff;
+
+            VerticalLayout {
+                padding-left: 2px;
+                padding-right: 2px;
+                padding-top: 2px;
+                padding-bottom: 2px;
+                spacing: 2px;
+
+                Rectangle {
+                    height: 24px;
+                    background: #f0f0f0;
+                    border-width: 1px;
+                    border-color: #d8d8d8;
+
+                    Text {
+                        x: 6px;
+                        y: 5px;
+                        width: parent.width - 12px;
+                        text: "分组  " + root.stats-primary + "  " + root.stats-secondary + "  " + root.stats-tertiary;
+                        color: #404040;
+                        font-size: 12px;
+                        overflow: elide;
+                    }
+                }
+
+                ListView {
+                    height: 610px;
+
+                    for signal-row[index] in root.signal-rows : Rectangle {
+                        height: signal-row.is_header ? 40px : 26px;
+                        background: signal-row.is_header ? #f7f7f7 : #ffffff;
+                        border-width: 1px;
+                        border-color: #e0e0e0;
+
+                        TouchArea {
+                            clicked => {
+                                if (!signal-row.pending && signal-row.unread &&
+                                        ((signal-row.is_header && signal-row.unread_count > 0) ||
+                                        !signal-row.is_header)) {
+                                    root.activate-signal(index);
+                                }
+                            }
+                        }
+
+                        Text {
+                            x: 6px;
+                            y: signal-row.is_header ? 4px : 4px;
+                            width: signal-row.is_header ? parent.width - 62px : 48px;
+                            text: signal-row.title;
+                            color: #202020;
+                            font-size: signal-row.is_header ? 15px : 12px;
+                            font-weight: signal-row.is_header ? 600 : (signal-row.unread ? 600 : 400);
+                            overflow: elide;
+                        }
+
+                        Text {
+                            x: signal-row.is_header ? 6px : 60px;
+                            y: signal-row.is_header ? 22px : 4px;
+                            width: signal-row.is_header ? parent.width - 72px : parent.width - 120px;
+                            text: signal-row.meta;
+                            color: signal-row.unread ? #404040 : #707070;
+                            font-size: signal-row.is_header ? 11px : 10px;
+                            overflow: elide;
+                        }
+
+                        Text {
+                            x: parent.width - 48px;
+                            y: signal-row.is_header ? 10px : 4px;
+                            width: 42px;
+                            text: signal-row.is_header
+                                ? (signal-row.pending ? "..." : signal-row.unread_count)
+                                : (signal-row.pending ? "..." : (signal-row.unread ? "新" : ""));
+                            color: signal-row.unread ? #202020 : #808080;
+                            font-size: 11px;
+                            font-weight: 600;
+                            horizontal-alignment: right;
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 export component WidgetWindow inherits Window {
@@ -449,9 +427,19 @@ export component WidgetWindow inherits Window {
     callback refresh-data();
     callback start-widget-drag();
     callback show-widget-menu();
+    callback hover-started();
+    callback hover-ended();
 
     TouchArea {
         mouse-cursor: grab;
+
+        changed has-hover => {
+            if self.has-hover {
+                root.hover-started();
+            } else {
+                root.hover-ended();
+            }
+        }
 
         pointer-event(event) => {
             if (event.button == PointerEventButton.left && event.kind == PointerEventKind.down) {

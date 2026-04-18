@@ -23,6 +23,8 @@ dist-ssr/
 src-tauri/target/
 src-tauri/gen/schemas/
 native-shell/target/
+native-shell/target-tests/
+widget-placement.json
 
 # Editor directories and files
 .vscode/*
@@ -40,3 +42,4 @@ Thumbs.db
 package-lock.json
 .vscode
 Cargo.lock
+target-codex
