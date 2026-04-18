@@ -1,4 +1,5 @@
 use std::cell::RefCell;
+use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -18,6 +19,8 @@ use slint::{
     VecModel, Weak,
 };
 
+#[cfg(target_os = "windows")]
+use slint::winit_030::winit::platform::windows::IconExtWindows;
 #[cfg(target_os = "windows")]
 use slint::winit_030::winit::platform::windows::WindowExtWindows;
 #[cfg(target_os = "windows")]
@@ -295,6 +298,7 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
     bridge.refresh_ui();
     main_window.show()?;
     widget_window.show()?;
+    configure_main_window(&main_window);
     configure_widget_window(&widget_window);
     position_widget_window(&widget_window, &widget_controller);
 
@@ -660,16 +664,38 @@ fn apply_snapshot_to_widget(widget_window: &WidgetWindow, snapshot: &UiSnapshot)
     widget_window.set_widget_visible(snapshot.widget_visible);
 }
 
+fn configure_main_window(main_window: &MainWindow) {
+    #[cfg(target_os = "windows")]
+    {
+        let _ = main_window
+            .window()
+            .with_winit_window(|window: &winit::window::Window| {
+                window.set_window_icon(load_window_icon());
+            });
+    }
+}
+
 fn configure_widget_window(widget_window: &WidgetWindow) {
     #[cfg(target_os = "windows")]
     {
         let _ = widget_window
             .window()
             .with_winit_window(|window: &winit::window::Window| {
+                window.set_window_icon(load_window_icon());
                 window.set_skip_taskbar(true);
             });
         schedule_windows_widget_taskbar_policy_retry(25);
     }
+}
+
+#[cfg(target_os = "windows")]
+fn load_window_icon() -> Option<winit::window::Icon> {
+    winit::window::Icon::from_path(app_icon_path(), None).ok()
+}
+
+#[cfg(target_os = "windows")]
+fn app_icon_path() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("app-icon.ico")
 }
 
 #[cfg(target_os = "windows")]

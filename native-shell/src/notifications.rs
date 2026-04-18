@@ -127,6 +127,32 @@ fn side_label(side: i8) -> &'static str {
     if side >= 0 { "看多" } else { "看空" }
 }
 
+fn notification_title(alert: &SignalAlert) -> String {
+    format!(
+        "{}信号 | {} | {} | {}",
+        level_label(alert.level),
+        alert.symbol,
+        alert.period,
+        side_label(alert.side)
+    )
+}
+
+fn notification_body(alert: &SignalAlert) -> String {
+    format!(
+        "{} | {}",
+        alert.group_name,
+        signal_type_label(&alert.signal_type)
+    )
+}
+
+fn notification_footer(alert: &SignalAlert) -> String {
+    format!(
+        "触发时间 {} | 周期 {}",
+        format_time(alert.trigger_time),
+        alert.period
+    )
+}
+
 fn format_time(timestamp_ms: i64) -> String {
     if timestamp_ms <= 0 {
         return "n/a".to_string();
@@ -143,14 +169,11 @@ fn format_time(timestamp_ms: i64) -> String {
 #[cfg(target_os = "windows")]
 mod windows {
     use super::{
-        format_time, level_label, side_label, signal_type_label, AlertLevel, SignalAlert,
+        notification_body, notification_footer, notification_title, AlertLevel, SignalAlert,
     };
     use crate::runtime::UiConfig;
     use std::process::Command;
     use std::sync::OnceLock;
-    use windows_sys::Win32::UI::WindowsAndMessaging::{
-        MessageBeep, MB_ICONASTERISK, MB_ICONEXCLAMATION, MB_ICONHAND,
-    };
 
     const APP_ID: &str = "WatchTower.SignalDesk";
     const APP_NAME: &str = "Watch Tower";
@@ -181,26 +204,39 @@ mod windows {
     }
 
     fn ensure_registered() -> Result<(), String> {
-        REGISTRATION
-            .get_or_init(|| winrt_toast::register(APP_ID, APP_NAME, None).map_err(|err| err.to_string()))
-            .clone()
+        REGISTRATION.get_or_init(register_aumid).clone()
+    }
+
+    fn register_aumid() -> Result<(), String> {
+        let output = Command::new("reg")
+            .args([
+                "add",
+                &format!("HKCU\\Software\\Classes\\AppUserModelId\\{}", APP_ID),
+                "/v",
+                "DisplayName",
+                "/t",
+                "REG_SZ",
+                "/d",
+                APP_NAME,
+                "/f",
+            ])
+            .output()
+            .map_err(|err| err.to_string())?;
+
+        if output.status.success() {
+            Ok(())
+        } else {
+            let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+            let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            Err(if !stderr.is_empty() { stderr } else { stdout })
+        }
     }
 
     fn show_toast(alert: &SignalAlert) -> Result<(), String> {
         let scenario = scenario_attr(alert.level);
-        let title = xml_escape(&format!(
-            "{}信号 · {} · {} · {}",
-            level_label(alert.level),
-            alert.symbol,
-            alert.period,
-            side_label(alert.side)
-        ));
-        let body = xml_escape(&format!(
-            "{} · {}",
-            alert.group_name,
-            signal_type_label(&alert.signal_type)
-        ));
-        let footer = xml_escape(&format!("触发时间 {} · 周期 {}", format_time(alert.trigger_time), alert.period));
+        let title = xml_escape(&notification_title(alert));
+        let body = xml_escape(&notification_body(alert));
+        let footer = xml_escape(&notification_footer(alert));
         let tag = xml_escape(&format!(
             "{}-{}-{}",
             alert.symbol, alert.period, alert.signal_type
@@ -257,21 +293,29 @@ $toast.Group = 'signal-desk'\n\
     fn scenario_attr(level: AlertLevel) -> &'static str {
         match level {
             AlertLevel::Normal => "",
-            AlertLevel::High => " scenario='reminder'",
-            AlertLevel::Critical => " scenario='alarm'",
+            AlertLevel::High => " scenario='reminder' duration='long'",
+            AlertLevel::Critical => " scenario='alarm' duration='long'",
         }
     }
 
     fn play_level_beep(level: AlertLevel) {
-        let tone = match level {
-            AlertLevel::Normal => MB_ICONASTERISK,
-            AlertLevel::High => MB_ICONEXCLAMATION,
-            AlertLevel::Critical => MB_ICONHAND,
+        let sound = match level {
+            AlertLevel::Normal => "Asterisk",
+            AlertLevel::High => "Exclamation",
+            AlertLevel::Critical => "Hand",
         };
 
-        unsafe {
-            MessageBeep(tone);
-        }
+        let script = format!("[System.Media.SystemSounds]::{}.Play()", sound);
+        let _ = Command::new("powershell")
+            .args([
+                "-NoProfile",
+                "-NonInteractive",
+                "-WindowStyle",
+                "Hidden",
+                "-Command",
+                &script,
+            ])
+            .output();
     }
 
     fn xml_escape(text: &str) -> String {
@@ -285,7 +329,10 @@ $toast.Group = 'signal-desk'\n\
 
 #[cfg(test)]
 mod tests {
-    use super::{alert_level_for_period, collect_new_alerts, AlertLevel};
+    use super::{
+        alert_level_for_period, collect_new_alerts, notification_body, notification_footer,
+        notification_title, AlertLevel,
+    };
     use crate::runtime::RuntimeSignal;
 
     fn signal(period: &str, trigger_time: i64, unread: bool) -> RuntimeSignal {
@@ -331,5 +378,15 @@ mod tests {
         assert_eq!(alert_level_for_period("60"), AlertLevel::High);
         assert_eq!(alert_level_for_period("10D"), AlertLevel::Critical);
         assert_eq!(alert_level_for_period("W"), AlertLevel::Critical);
+    }
+
+    #[test]
+    fn notification_copy_prioritizes_trading_context() {
+        let alerts = collect_new_alerts(&[], &[signal("10D", 3661_000, true)]);
+        let alert = &alerts[0];
+
+        assert_eq!(notification_title(alert), "高等级信号 | BTCUSDT | 10D | 看多");
+        assert_eq!(notification_body(alert), "BTC Main | MACD 背离");
+        assert_eq!(notification_footer(alert), "触发时间 01:01:01 | 周期 10D");
     }
 }

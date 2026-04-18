@@ -1,5 +1,6 @@
 use std::sync::Arc;
 use std::thread;
+use std::path::PathBuf;
 
 use tray_icon::menu::{ContextMenu, Menu, MenuEvent, MenuItem};
 use tray_icon::{Icon, MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent};
@@ -140,6 +141,12 @@ fn command_from_tray_icon_event(event: &TrayIconEvent) -> Option<TrayCommand> {
     }
 }
 
+#[cfg(target_os = "windows")]
+fn make_icon() -> Result<Icon, tray_icon::BadIcon> {
+    Icon::from_path(app_icon_path(), Some((32, 32)))
+}
+
+#[cfg(not(target_os = "windows"))]
 fn make_icon() -> Result<Icon, tray_icon::BadIcon> {
     let size = 32;
     let mut rgba = vec![0_u8; size * size * 4];
@@ -157,4 +164,9 @@ fn make_icon() -> Result<Icon, tray_icon::BadIcon> {
     }
 
     Icon::from_rgba(rgba, size as u32, size as u32)
+}
+
+#[cfg(target_os = "windows")]
+fn app_icon_path() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("app-icon.ico")
 }
