@@ -1,4 +1,4 @@
-use std::cell::{Cell, RefCell};
+use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -19,11 +19,19 @@ use slint::{
 };
 
 #[cfg(target_os = "windows")]
-use slint::winit_030::winit::platform::windows::WindowAttributesExtWindows;
-#[cfg(target_os = "windows")]
 use slint::winit_030::winit::platform::windows::WindowExtWindows;
 #[cfg(target_os = "windows")]
 use slint::winit_030::winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
+#[cfg(target_os = "windows")]
+use windows_sys::Win32::{
+    Foundation::{HWND, LPARAM},
+    UI::WindowsAndMessaging::{
+        EnumWindows, GetWindowLongPtrW, GetWindowTextLengthW, GetWindowTextW,
+        GetWindowThreadProcessId, SetWindowLongPtrW, SetWindowPos, GWL_EXSTYLE,
+        GWLP_HWNDPARENT, SWP_FRAMECHANGED, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER,
+        WS_EX_APPWINDOW, WS_EX_TOOLWINDOW,
+    },
+};
 
 slint::include_modules!();
 
@@ -110,6 +118,8 @@ impl UiBridge {
         if let Some(widget_window) = self.widget_window.upgrade() {
             if visible {
                 let _ = widget_window.show();
+                #[cfg(target_os = "windows")]
+                schedule_windows_widget_taskbar_policy_retry(25);
             } else {
                 let _ = widget_window.hide();
             }
@@ -214,22 +224,10 @@ impl UiBridge {
 }
 
 pub fn run() -> Result<(), Box<dyn std::error::Error>> {
-    #[cfg(target_os = "windows")]
-    let widget_owner = Rc::new(Cell::new(None::<isize>));
-    configure_winit_backend(
-        #[cfg(target_os = "windows")]
-        widget_owner.clone(),
-    )?;
-
     let initial_snapshot = crate::runtime::load_runtime_snapshot();
     let state = Arc::new(Mutex::new(AppState::new(initial_snapshot)));
 
     let main_window = MainWindow::new()?;
-    apply_snapshot_to_main(&main_window, &state.lock().expect("state poisoned").snapshot());
-    main_window.show()?;
-    #[cfg(target_os = "windows")]
-    remember_main_window_handle(&main_window, &widget_owner);
-
     let widget_window = WidgetWindow::new()?;
 
     let runtime_state = state.clone();
@@ -295,45 +293,13 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
     let _tray = install_tray_bridge(bridge.clone())?;
 
     bridge.refresh_ui();
+    main_window.show()?;
     widget_window.show()?;
     configure_widget_window(&widget_window);
     position_widget_window(&widget_window, &widget_controller);
 
     slint::run_event_loop_until_quit()?;
     Ok(())
-}
-
-fn configure_winit_backend(
-    #[cfg(target_os = "windows")] widget_owner: Rc<Cell<Option<isize>>>,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let mut backend = slint::BackendSelector::new().backend_name("winit".into());
-
-    #[cfg(target_os = "windows")]
-    {
-        backend = backend.with_winit_window_attributes_hook(move |attributes| {
-            if let Some(hwnd) = widget_owner.get() {
-                attributes.with_owner_window(hwnd as _).with_skip_taskbar(true)
-            } else {
-                attributes
-            }
-        });
-    }
-
-    backend.select()?;
-    Ok(())
-}
-
-#[cfg(target_os = "windows")]
-fn remember_main_window_handle(main_window: &MainWindow, widget_owner: &Rc<Cell<Option<isize>>>) {
-    let _ = main_window
-        .window()
-        .with_winit_window(|window: &winit::window::Window| {
-            if let Ok(handle) = window.window_handle() {
-                if let RawWindowHandle::Win32(win32) = handle.as_raw() {
-                    widget_owner.set(Some(win32.hwnd.get() as isize));
-                }
-            }
-        });
 }
 
 fn install_tray_bridge(bridge: UiBridge) -> Result<TrayHandles, Box<dyn std::error::Error>> {
@@ -701,7 +667,102 @@ fn configure_widget_window(widget_window: &WidgetWindow) {
             .with_winit_window(|window: &winit::window::Window| {
                 window.set_skip_taskbar(true);
             });
+        schedule_windows_widget_taskbar_policy_retry(25);
     }
+}
+
+#[cfg(target_os = "windows")]
+fn schedule_windows_widget_taskbar_policy_retry(remaining_attempts: u8) {
+    if apply_windows_widget_taskbar_policy() || remaining_attempts <= 1 {
+        return;
+    }
+
+    Timer::single_shot(Duration::from_millis(200), move || {
+        schedule_windows_widget_taskbar_policy_retry(remaining_attempts - 1);
+    });
+}
+
+#[cfg(target_os = "windows")]
+fn apply_windows_widget_taskbar_policy() -> bool {
+    let mut windows = WindowLookup::default();
+    unsafe {
+        EnumWindows(
+            Some(collect_signal_desk_windows),
+            &mut windows as *mut WindowLookup as LPARAM,
+        );
+    }
+
+    let (Some(main_hwnd), Some(widget_hwnd)) = (windows.main_hwnd, windows.widget_hwnd) else {
+        return false;
+    };
+
+    unsafe {
+        SetWindowLongPtrW(widget_hwnd, GWLP_HWNDPARENT, main_hwnd as isize);
+        let ex_style = GetWindowLongPtrW(widget_hwnd, GWL_EXSTYLE) as u32;
+        let next_ex_style = (ex_style | WS_EX_TOOLWINDOW) & !WS_EX_APPWINDOW;
+        if next_ex_style != ex_style {
+            SetWindowLongPtrW(widget_hwnd, GWL_EXSTYLE, next_ex_style as isize);
+        }
+        SetWindowPos(
+            widget_hwnd,
+            std::ptr::null_mut(),
+            0,
+            0,
+            0,
+            0,
+            SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED,
+        );
+    }
+
+    true
+}
+
+#[cfg(target_os = "windows")]
+#[derive(Default)]
+struct WindowLookup {
+    pid: u32,
+    main_hwnd: Option<HWND>,
+    widget_hwnd: Option<HWND>,
+}
+
+#[cfg(target_os = "windows")]
+unsafe extern "system" fn collect_signal_desk_windows(hwnd: HWND, lparam: LPARAM) -> i32 {
+    let lookup = unsafe { &mut *(lparam as *mut WindowLookup) };
+    if lookup.pid == 0 {
+        lookup.pid = std::process::id();
+    }
+
+    let mut window_pid = 0_u32;
+    unsafe {
+        GetWindowThreadProcessId(hwnd, &mut window_pid);
+    }
+    if window_pid != lookup.pid {
+        return 1;
+    }
+
+    match read_window_title(hwnd).as_deref() {
+        Some("Signal Desk Native") => lookup.main_hwnd = Some(hwnd),
+        Some("Signal Desk Widget") => lookup.widget_hwnd = Some(hwnd),
+        _ => {}
+    }
+
+    1
+}
+
+#[cfg(target_os = "windows")]
+fn read_window_title(hwnd: HWND) -> Option<String> {
+    let length = unsafe { GetWindowTextLengthW(hwnd) };
+    if length == 0 {
+        return None;
+    }
+
+    let mut buffer = vec![0_u16; length as usize + 1];
+    let copied = unsafe { GetWindowTextW(hwnd, buffer.as_mut_ptr(), buffer.len() as i32) };
+    if copied == 0 {
+        return None;
+    }
+
+    Some(String::from_utf16_lossy(&buffer[..copied as usize]))
 }
 
 fn position_widget_window(
