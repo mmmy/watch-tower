@@ -6,6 +6,7 @@ use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use crate::config;
+use crate::notifications;
 use reqwest::blocking::Client;
 use serde::{Deserialize, Serialize};
 
@@ -116,6 +117,7 @@ pub struct RuntimeSnapshot {
     pub unread_count: usize,
     pub last_tick: u64,
     pub last_updated_at: i64,
+    pub last_connection_ok: Option<bool>,
     pub always_on_top: bool,
     pub edge_mode: bool,
     pub main_visible: bool,
@@ -180,6 +182,7 @@ struct RuntimeStore {
     unread_count: usize,
     last_tick: u64,
     last_updated_at: i64,
+    last_connection_ok: Option<bool>,
     always_on_top: bool,
     edge_mode: bool,
     main_visible: bool,
@@ -259,6 +262,7 @@ impl RuntimeStore {
             unread_count: 0,
             last_tick: 0,
             last_updated_at: now_ms(),
+            last_connection_ok: None,
         };
         store.signals = seed_signals(&store.config);
         store.recompute_unread();
@@ -272,6 +276,7 @@ impl RuntimeStore {
             unread_count: self.unread_count,
             last_tick: self.last_tick,
             last_updated_at: self.last_updated_at,
+            last_connection_ok: self.last_connection_ok,
             always_on_top: self.always_on_top,
             edge_mode: self.edge_mode,
             main_visible: self.main_visible,
@@ -292,6 +297,7 @@ impl RuntimeStore {
             self.last_tick += 1;
         }
         self.last_updated_at = now_ms();
+        self.last_connection_ok = Some(true);
         self.recompute_unread();
     }
 
@@ -304,6 +310,7 @@ impl RuntimeStore {
         }) {
             signal.unread = !read;
             self.last_updated_at = now_ms();
+            self.last_connection_ok = Some(true);
             self.recompute_unread();
             return true;
         }
@@ -392,6 +399,11 @@ impl RuntimeModel {
         self.store.config = config;
         Ok(self.store.snapshot())
     }
+
+    pub fn mark_last_connection_failed(&mut self) -> RuntimeSnapshot {
+        self.store.last_connection_ok = Some(false);
+        self.store.snapshot()
+    }
 }
 
 pub fn runtime_snapshot_from_config(config: AppConfig) -> RuntimeSnapshot {
@@ -405,7 +417,7 @@ pub fn load_runtime_snapshot() -> RuntimeSnapshot {
 pub fn spawn_runtime_loop<F, E>(on_snapshot: F, on_error: E) -> RuntimeHandles
 where
     F: Fn(RuntimeSnapshot) + Send + Sync + 'static,
-    E: Fn(String) + Send + Sync + 'static,
+    E: Fn(String, RuntimeSnapshot) + Send + Sync + 'static,
 {
     let (tx, rx) = mpsc::channel::<RuntimeCommand>();
     let on_snapshot = Arc::new(on_snapshot);
@@ -417,7 +429,7 @@ where
 
         match runtime.refresh_from_api_with_tick(false) {
             Ok(snapshot) => on_snapshot(snapshot),
-            Err(error) => on_error(error),
+            Err(error) => on_error(error, runtime.mark_last_connection_failed()),
         }
 
         loop {
@@ -425,12 +437,12 @@ where
             match rx.recv_timeout(wait_for) {
                 Ok(RuntimeCommand::RefreshNow) => match runtime.refresh_from_api() {
                     Ok(snapshot) => on_snapshot(snapshot),
-                    Err(error) => on_error(error),
+                    Err(error) => on_error(error, runtime.mark_last_connection_failed()),
                 },
                 Ok(RuntimeCommand::MarkSignalRead { input, read }) => {
                     match runtime.mark_signal_read_remote(&input, read) {
                         Ok(snapshot) => on_snapshot(snapshot),
-                        Err(error) => on_error(error),
+                        Err(error) => on_error(error, runtime.mark_last_connection_failed()),
                     }
                 }
                 Ok(RuntimeCommand::SetAlwaysOnTop(pinned)) => {
@@ -450,12 +462,12 @@ where
                 }
                 Ok(RuntimeCommand::SaveConfig) => match runtime.save_config() {
                     Ok(snapshot) => on_snapshot(snapshot),
-                    Err(error) => on_error(error),
+                    Err(error) => on_error(error, runtime.snapshot()),
                 },
                 Ok(RuntimeCommand::Quit) | Err(RecvTimeoutError::Disconnected) => break,
                 Err(RecvTimeoutError::Timeout) => match runtime.refresh_from_api() {
                     Ok(snapshot) => on_snapshot(snapshot),
-                    Err(error) => on_error(error),
+                    Err(error) => on_error(error, runtime.mark_last_connection_failed()),
                 },
             }
         }
@@ -622,8 +634,15 @@ fn refresh_runtime_from_api(
     store: &mut RuntimeStore,
     advance_tick: bool,
 ) -> Result<RuntimeSnapshot, String> {
+    let previous = store.signals.clone();
     let signals = fetch_runtime_signals(&store.config)?;
+    let alerts = if advance_tick {
+        notifications::collect_new_alerts(&previous, &signals)
+    } else {
+        Vec::new()
+    };
     store.apply_remote_signals(signals, advance_tick);
+    notifications::emit_alerts(&alerts, &store.config.ui);
     Ok(store.snapshot())
 }
 

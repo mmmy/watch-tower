@@ -145,8 +145,8 @@ export component MainWindow inherits Window {
     title: "Signal Desk Native";
     preferred-width: 420px;
     preferred-height: 700px;
-    min-width: 340px;
-    min-height: 500px;
+    min-width: 40px;
+    min-height: 100px;
     background: #f3f3f3;
 
     in-out property <int> unread-count: 0;
@@ -358,11 +358,27 @@ export component MainWindow inherits Window {
                 }
             }
 
-            Text {
+            time-prefix := Text {
                 x: 54px;
                 y: 6px;
-                width: parent.width - 60px;
-                text: root.stats-quaternary + " | " + root.connection-label + " | " + root.status-text;
+                text: root.stats-quaternary + " | ";
+                color: #404040;
+                font-size: 12px;
+            }
+
+            connection-status := Text {
+                x: time-prefix.x + time-prefix.width;
+                y: 6px;
+                text: root.connection-label;
+                color: root.connection-tone == "offline" ? #c62828 : #404040;
+                font-size: 12px;
+            }
+
+            Text {
+                x: connection-status.x + connection-status.width;
+                y: 6px;
+                width: parent.width - self.x - 6px;
+                text: " | " + root.status-text;
                 color: #404040;
                 font-size: 12px;
                 overflow: elide;
@@ -509,17 +525,18 @@ export component MainWindow inherits Window {
 
 export component WidgetWindow inherits Window {
     title: "Signal Desk Widget";
-    preferred-width: 96px;
-    preferred-height: 96px;
-    min-width: 96px;
-    min-height: 96px;
-    max-width: 96px;
-    max-height: 96px;
+    preferred-width: 50px;
+    preferred-height: 50px;
+    min-width: 50px;
+    min-height: 50px;
+    max-width: 50px;
+    max-height: 50px;
     always-on-top: true;
     no-frame: true;
     background: transparent;
 
     in-out property <int> unread-count: 0;
+    in-out property <bool> last-refresh-failed: false;
     in-out property <string> status-text: "Ready";
     in-out property <bool> widget-visible: true;
     in-out property <bool> drag-primed: false;
@@ -588,27 +605,55 @@ export component WidgetWindow inherits Window {
     Rectangle {
         width: 100%;
         height: 100%;
-        border-radius: 48px;
-        background: root.widget-visible ? #2563eb : #475569;
+        border-radius: 25px;
+        background: root.last-refresh-failed
+            ? (root.widget-visible ? #dc2626 : #7f1d1d)
+            : root.unread-count > 0
+            ? (root.widget-visible ? #d97706 : #78350f)
+            : (root.widget-visible ? #2563eb : #475569);
 
-        VerticalLayout {
-            padding: 10px;
-            spacing: 2px;
-            alignment: center;
+        Text {
+            width: parent.width;
+            height: parent.height;
+            visible: !root.last-refresh-failed || root.unread-count > 0;
+            text: root.unread-count;
+            color: #eff6ff;
+            font-size: root.unread-count > 9 ? 17px : 18px;
+            font-weight: 700;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+
+        Text {
+            width: parent.width;
+            height: parent.height;
+            visible: root.last-refresh-failed && root.unread-count == 0;
+            text: "!";
+            color: #fffbeb;
+            font-size: 22px;
+            font-weight: 800;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+
+        Rectangle {
+            x: parent.width - self.width - 4px;
+            y: 4px;
+            width: 14px;
+            height: 14px;
+            visible: root.last-refresh-failed && root.unread-count > 0;
+            border-radius: 7px;
+            background: #fffbeb;
 
             Text {
-                text: root.unread-count;
-                color: #eff6ff;
-                font-size: 34px;
+                width: parent.width;
+                height: parent.height;
+                text: "!";
+                color: #9a3412;
+                font-size: 10px;
                 font-weight: 700;
                 horizontal-alignment: center;
-            }
-
-            Text {
-                text: "Signal";
-                color: #dbeafe;
-                font-size: 12px;
-                horizontal-alignment: center;
+                vertical-alignment: center;
             }
         }
     }

@@ -30,18 +30,53 @@ fn ui_snapshot_exposes_runtime_control_state() {
 }
 
 #[test]
-fn ui_snapshot_marks_stale_connection_as_timed_out() {
+fn ui_snapshot_marks_unknown_connection_before_first_remote_attempt() {
+    let runtime_snapshot = runtime_snapshot_from_config(AppConfig {
+        groups: vec![WatchGroup::default()],
+        ..Default::default()
+    });
+
+    let snapshot = AppState::new(runtime_snapshot).snapshot();
+
+    assert_eq!(snapshot.connection_label, "未连接");
+    assert_eq!(snapshot.connection_tone, "lagging");
+}
+
+#[test]
+fn ui_snapshot_marks_last_connection_failure() {
     let mut runtime_snapshot = runtime_snapshot_from_config(AppConfig {
         groups: vec![WatchGroup::default()],
         ..Default::default()
     });
-    runtime_snapshot.last_updated_at = 0;
-    runtime_snapshot.config.poll.interval_secs = 60;
+    runtime_snapshot.last_connection_ok = Some(false);
 
     let snapshot = AppState::new(runtime_snapshot).snapshot();
 
-    assert_eq!(snapshot.connection_label, "连接超时");
+    assert_eq!(snapshot.connection_label, "连接失败");
     assert_eq!(snapshot.connection_tone, "offline");
+}
+
+#[test]
+fn ui_snapshot_marks_last_refresh_failure_for_widget_state() {
+    let runtime_snapshot = runtime_snapshot_from_config(AppConfig {
+        groups: vec![WatchGroup::default()],
+        ..Default::default()
+    });
+    let mut state = AppState::new(runtime_snapshot);
+
+    assert!(!state.snapshot().last_refresh_failed);
+
+    state.set_runtime_error(
+        runtime_snapshot_from_config(AppConfig {
+            groups: vec![WatchGroup::default()],
+            ..Default::default()
+        }),
+        "timeout".into(),
+    );
+
+    let failed = state.snapshot();
+    assert!(failed.last_refresh_failed);
+    assert!(failed.status_text.contains("轮询失败"));
 }
 
 #[test]

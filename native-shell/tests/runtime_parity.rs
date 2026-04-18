@@ -23,6 +23,7 @@ fn runtime_model_updates_snapshot_for_shell_and_ui_flags() {
     let snapshot = runtime.set_always_on_top(false);
     assert!(!snapshot.always_on_top);
     assert!(!snapshot.config.ui.always_on_top);
+    assert_eq!(snapshot.last_connection_ok, None);
 
     let snapshot = runtime.set_edge_mode(true);
     assert!(snapshot.edge_mode);
@@ -36,6 +37,7 @@ fn runtime_model_updates_snapshot_for_shell_and_ui_flags() {
 
     let snapshot = runtime.set_sound(false);
     assert!(!snapshot.config.ui.sound);
+    assert_eq!(snapshot.last_connection_ok, None);
 }
 
 #[test]

@@ -17,3 +17,4 @@ serde_yaml = "0.9"
 
 [target.'cfg(target_os = "windows")'.dependencies]
 windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging"] }
+winrt-toast = "0.1.1"

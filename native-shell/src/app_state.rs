@@ -3,6 +3,7 @@ use crate::runtime::{RuntimeSignal, RuntimeSnapshot, SignalMutationInput};
 #[derive(Clone, Debug)]
 pub struct UiSnapshot {
     pub unread_count: i32,
+    pub last_refresh_failed: bool,
     pub status_text: String,
     pub refresh_label: String,
     pub runtime_summary: String,
@@ -93,6 +94,7 @@ impl AppState {
         } else {
             format!("Tick {}", self.runtime_snapshot.last_tick)
         };
+        let last_refresh_failed = self.last_error.is_some();
 
         let refresh_label = format!(
             "{} 个信号槽 · {} 个分组 · {} 秒轮询",
@@ -106,10 +108,7 @@ impl AppState {
             bool_label(self.runtime_snapshot.config.ui.notifications),
             bool_label(self.runtime_snapshot.config.ui.sound)
         );
-        let connection = get_connection_state(
-            self.runtime_snapshot.last_updated_at,
-            self.runtime_snapshot.config.poll.interval_secs,
-        );
+        let connection = get_connection_state(self.runtime_snapshot.last_connection_ok);
 
         let config_location = crate::runtime::config_location_hint();
         let signal_rows = self
@@ -139,6 +138,7 @@ impl AppState {
 
         UiSnapshot {
             unread_count: self.runtime_snapshot.unread_count as i32,
+            last_refresh_failed,
             status_text,
             refresh_label,
             runtime_summary,
@@ -191,7 +191,8 @@ impl AppState {
         self.pending_mark_read.clear();
     }
 
-    pub fn set_runtime_error(&mut self, error: String) {
+    pub fn set_runtime_error(&mut self, snapshot: RuntimeSnapshot, error: String) {
+        self.runtime_snapshot = snapshot;
         self.last_error = Some(error);
         self.pending_mark_read.clear();
     }
@@ -419,25 +420,20 @@ struct ConnectionState<'a> {
     tone: &'a str,
 }
 
-fn get_connection_state(last_updated_at: i64, interval_secs: u64) -> ConnectionState<'static> {
-    let elapsed_ms = current_time_ms().saturating_sub(last_updated_at);
-    let expected_ms = interval_secs.max(1) as i64 * 1000;
-
-    if elapsed_ms <= expected_ms * 2 {
-        ConnectionState {
+fn get_connection_state(last_connection_ok: Option<bool>) -> ConnectionState<'static> {
+    match last_connection_ok {
+        Some(true) => ConnectionState {
             label: "连接正常",
             tone: "online",
-        }
-    } else if elapsed_ms <= expected_ms * 4 {
-        ConnectionState {
-            label: "连接延迟",
-            tone: "lagging",
-        }
-    } else {
-        ConnectionState {
-            label: "连接超时",
+        },
+        Some(false) => ConnectionState {
+            label: "连接失败",
             tone: "offline",
-        }
+        },
+        None => ConnectionState {
+            label: "未连接",
+            tone: "lagging",
+        },
     }
 }
 

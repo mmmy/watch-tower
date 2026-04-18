@@ -9,11 +9,11 @@ fn widget_anchor_position_uses_top_right_monitor_space() {
             width: 1920.0,
             height: 1080.0,
         },
-        96.0,
-        96.0,
+        50.0,
+        50.0,
     );
 
-    assert_eq!(placement, WindowPlacement { x: 1796.0, y: 32.0 });
+    assert_eq!(placement, WindowPlacement { x: 1842.0, y: 32.0 });
 }
 
 #[test]
@@ -25,9 +25,9 @@ fn widget_anchor_position_clamps_inside_tiny_work_area() {
             width: 80.0,
             height: 90.0,
         },
-        96.0,
-        96.0,
+        50.0,
+        50.0,
     );
 
-    assert_eq!(placement, WindowPlacement { x: 62.0, y: 87.0 });
+    assert_eq!(placement, WindowPlacement { x: 62.0, y: 103.0 });
 }

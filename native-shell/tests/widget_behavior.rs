@@ -25,15 +25,15 @@ fn build_widget_placement_snaps_to_side_docks() {
         height: 1080.0,
     });
 
-    let left = build_widget_placement(8.0, 120.0, 96.0, 96.0, work_area);
+    let left = build_widget_placement(8.0, 120.0, 50.0, 50.0, work_area);
     assert_eq!(left.dock, WidgetDockSide::Left);
     assert!(left.auto_hidden);
 
-    let right = build_widget_placement(1810.0, 120.0, 96.0, 96.0, work_area);
+    let right = build_widget_placement(1860.0, 120.0, 50.0, 50.0, work_area);
     assert_eq!(right.dock, WidgetDockSide::Right);
     assert!(right.auto_hidden);
 
-    let top = build_widget_placement(400.0, 4.0, 96.0, 96.0, work_area);
+    let top = build_widget_placement(400.0, 4.0, 50.0, 50.0, work_area);
     assert_eq!(top.dock, WidgetDockSide::Top);
     assert!(!top.auto_hidden);
 }
@@ -53,15 +53,15 @@ fn restore_and_visibility_helpers_preserve_hidden_side_docks() {
         auto_hidden: true,
     };
 
-    let restored = restore_widget_placement(saved, 96.0, 96.0, work_area);
+    let restored = restore_widget_placement(saved, 50.0, 50.0, work_area);
     assert_eq!(restored.dock, WidgetDockSide::Right);
     assert!(restored.auto_hidden);
 
-    let revealed = reveal_widget_placement(restored, 96.0, work_area);
+    let revealed = reveal_widget_placement(restored, 50.0, work_area);
     assert_eq!(revealed.dock, WidgetDockSide::Right);
     assert!(!revealed.auto_hidden);
 
-    let hidden = hide_widget_placement(revealed, 96.0, work_area);
+    let hidden = hide_widget_placement(revealed, 50.0, work_area);
     assert_eq!(hidden.dock, WidgetDockSide::Right);
     assert!(hidden.auto_hidden);
 }

@@ -257,14 +257,14 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
             let runtime_state = state.clone();
             let runtime_ui_handle = main_window.as_weak();
             let runtime_widget_handle = widget_window.as_weak();
-            move |error| {
+            move |error, snapshot| {
                 let runtime_state = runtime_state.clone();
                 let runtime_ui_handle = runtime_ui_handle.clone();
                 let runtime_widget_handle = runtime_widget_handle.clone();
                 let _ = slint::invoke_from_event_loop(move || {
                     {
                         let mut guard = runtime_state.lock().expect("state poisoned");
-                        guard.set_runtime_error(error);
+                        guard.set_runtime_error(snapshot, error);
                     }
 
                     let snapshot = runtime_state.lock().expect("state poisoned").snapshot();
@@ -655,6 +655,7 @@ fn apply_snapshot_to_main(main_window: &MainWindow, snapshot: &UiSnapshot) {
 
 fn apply_snapshot_to_widget(widget_window: &WidgetWindow, snapshot: &UiSnapshot) {
     widget_window.set_unread_count(snapshot.unread_count);
+    widget_window.set_last_refresh_failed(snapshot.last_refresh_failed);
     widget_window.set_status_text(SharedString::from(snapshot.status_text.as_str()));
     widget_window.set_widget_visible(snapshot.widget_visible);
 }
