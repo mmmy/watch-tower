@@ -21,7 +21,9 @@ export struct UnreadItemData {
 
 component PlainButton inherits Rectangle {
     in property <string> text;
+    in property <length> text-size: 11px;
     callback clicked();
+    callback hover-changed(bool);
 
     min-width: 34px;
     height: 22px;
@@ -29,9 +31,13 @@ component PlainButton inherits Rectangle {
     border-color: #b8b8b8;
     background: #f6f6f6;
 
-    TouchArea {
+    button-touch := TouchArea {
         clicked => {
             root.clicked();
+        }
+
+        changed has-hover => {
+            root.hover-changed(self.has-hover);
         }
     }
 
@@ -41,7 +47,7 @@ component PlainButton inherits Rectangle {
         width: parent.width - 16px;
         text: root.text;
         color: #202020;
-        font-size: 11px;
+        font-size: root.text-size;
         horizontal-alignment: center;
         overflow: elide;
     }
@@ -177,6 +183,7 @@ export component MainWindow inherits Window {
     in-out property <bool> edge-mode: false;
     in-out property <bool> notifications-enabled: true;
     in-out property <bool> sound-enabled: true;
+    in-out property <bool> unread-popover-close-requested: false;
     callback toggle-always-on-top();
     callback toggle-edge-mode();
     callback adjust-edge-width(int);
@@ -188,6 +195,8 @@ export component MainWindow inherits Window {
     callback save-config();
     callback quit-app();
     callback toggle-signal-read(int);
+    callback unread-hover-started();
+    callback unread-hover-ended();
 
     Rectangle {
         width: 100%;
@@ -367,6 +376,7 @@ export component MainWindow inherits Window {
                         changed has-hover => {
                             if root.unread-count > 0 && self.has-hover {
                                 unread-popover.show();
+                                root.unread-hover-started();
                             }
                         }
 
@@ -399,6 +409,16 @@ export component MainWindow inherits Window {
                         border-width: 1px;
                         border-color: #d3a000;
                         background: #fffdf7;
+
+                        TouchArea {
+                            changed has-hover => {
+                                if self.has-hover {
+                                    root.unread-hover-started();
+                                } else {
+                                    root.unread-hover-ended();
+                                }
+                            }
+                        }
 
                         Rectangle {
                             x: 0px;
@@ -462,6 +482,14 @@ export component MainWindow inherits Window {
                                         y: 4px;
                                         width: 36px;
                                         text: "已读";
+                                        text-size: 9px;
+                                        hover-changed(hovered) => {
+                                            if hovered {
+                                                root.unread-hover-started();
+                                            } else {
+                                                root.unread-hover-ended();
+                                            }
+                                        }
                                         clicked => {
                                             root.toggle-signal-read(unread-item.row_index);
                                         }
@@ -633,6 +661,15 @@ export component MainWindow inherits Window {
                         }
                     }
                 }
+            }
+        }
+
+        if root.unread-popover-close-requested : Rectangle {
+            visible: false;
+
+            init => {
+                unread-popover.close();
+                root.unread-popover-close-requested = false;
             }
         }
     }

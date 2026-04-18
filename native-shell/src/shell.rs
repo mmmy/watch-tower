@@ -312,6 +312,8 @@ fn install_tray_bridge(bridge: UiBridge) -> Result<TrayHandles, Box<dyn std::err
 }
 
 fn wire_main_window(main_window: &MainWindow, bridge: UiBridge) {
+    let unread_hover_hide_timer = Rc::new(Timer::default());
+
     let pin_bridge = bridge.clone();
     main_window.on_toggle_always_on_top(move || {
         let next = {
@@ -393,6 +395,29 @@ fn wire_main_window(main_window: &MainWindow, bridge: UiBridge) {
     let toggle_signal_bridge = bridge.clone();
     main_window.on_toggle_signal_read(move |index| {
         toggle_signal_bridge.toggle_signal_read_at(index);
+    });
+
+    let unread_hover_timer = unread_hover_hide_timer.clone();
+    main_window.on_unread_hover_started(move || {
+        unread_hover_timer.stop();
+    });
+
+    let unread_hide_window = main_window.as_weak();
+    let unread_hide_timer = unread_hover_hide_timer.clone();
+    main_window.on_unread_hover_ended(move || {
+        let timer_window = unread_hide_window.clone();
+        let timer_handle = unread_hide_timer.clone();
+        unread_hide_timer.start(
+            TimerMode::SingleShot,
+            Duration::from_millis(120),
+            move || {
+                timer_handle.stop();
+                let Some(main_window) = timer_window.upgrade() else {
+                    return;
+                };
+                main_window.set_unread_popover_close_requested(true);
+            },
+        );
     });
 
     let close_bridge = bridge;
