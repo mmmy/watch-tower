@@ -44,3 +44,4 @@ package-lock.json
 Cargo.lock
 target-codex
 .worktrees
+main-window-state.json
