@@ -1,4 +1,5 @@
 use crate::runtime::{RuntimeSignal, RuntimeSnapshot, SignalMutationInput};
+use chrono::{Local, TimeZone};
 
 #[derive(Clone, Debug)]
 pub struct UiSnapshot {
@@ -441,12 +442,11 @@ fn format_timestamp(timestamp_ms: i64) -> String {
         return "n/a".to_string();
     }
 
-    let total_seconds = timestamp_ms / 1000;
-    let seconds = total_seconds.rem_euclid(60);
-    let minutes = (total_seconds / 60).rem_euclid(60);
-    let hours = (total_seconds / 3600).rem_euclid(24);
-
-    format!("{:02}:{:02}:{:02}", hours, minutes, seconds)
+    Local
+        .timestamp_millis_opt(timestamp_ms)
+        .single()
+        .map(|dt| dt.format("%H:%M:%S").to_string())
+        .unwrap_or_else(|| "n/a".to_string())
 }
 
 struct ConnectionState<'a> {
@@ -483,5 +483,24 @@ fn bool_label(value: bool) -> &'static str {
         "开"
     } else {
         "关"
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::format_timestamp;
+    use chrono::{Local, TimeZone};
+
+    #[test]
+    fn format_timestamp_uses_local_timezone() {
+        let timestamp_ms = 1_710_000_000_000i64;
+        let expected = Local
+            .timestamp_millis_opt(timestamp_ms)
+            .single()
+            .expect("valid local timestamp")
+            .format("%H:%M:%S")
+            .to_string();
+
+        assert_eq!(format_timestamp(timestamp_ms), expected);
     }
 }
