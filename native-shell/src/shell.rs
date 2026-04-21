@@ -1,10 +1,14 @@
 use std::cell::RefCell;
+use std::path::Path;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use std::time::Instant;
 
 use crate::app_state::{AppState, UiSnapshot};
+use crate::main_window_state::{
+    load_main_window_state, main_window_state_path, save_main_window_state, MainWindowState,
+};
 use crate::runtime::RuntimeHandles;
 use crate::tray::{TrayCommand, TrayHandles};
 use crate::widget_state::{
@@ -14,8 +18,8 @@ use crate::widget_state::{
 };
 use slint::winit_030::{winit, WinitWindowAccessor};
 use slint::{
-    CloseRequestResponse, ComponentHandle, LogicalPosition, SharedString, Timer, TimerMode,
-    VecModel, Weak,
+    CloseRequestResponse, ComponentHandle, LogicalPosition, LogicalSize as SlintLogicalSize,
+    SharedString, Timer, TimerMode, VecModel, Weak,
 };
 
 #[cfg(target_os = "windows")]
@@ -229,6 +233,10 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
 
     let main_window = MainWindow::new()?;
     let widget_window = WidgetWindow::new()?;
+    let persisted_main_window_state =
+        load_main_window_state(&main_window_state_path()).unwrap_or_default();
+    apply_main_window_state(&main_window, persisted_main_window_state);
+    let main_window_state = Rc::new(RefCell::new(persisted_main_window_state));
 
     let runtime_state = state.clone();
     let runtime_ui_handle = main_window.as_weak();
@@ -287,7 +295,7 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
     );
     let widget_controller = Rc::new(RefCell::new(WidgetControllerState::default()));
 
-    wire_main_window(&main_window, bridge.clone());
+    wire_main_window(&main_window, bridge.clone(), main_window_state);
     wire_widget_window(&widget_window, bridge.clone(), widget_controller.clone());
 
     let _tray = install_tray_bridge(bridge.clone())?;
@@ -311,8 +319,25 @@ fn install_tray_bridge(bridge: UiBridge) -> Result<TrayHandles, Box<dyn std::err
     })
 }
 
-fn wire_main_window(main_window: &MainWindow, bridge: UiBridge) {
+fn wire_main_window(
+    main_window: &MainWindow,
+    bridge: UiBridge,
+    main_window_state: Rc<RefCell<MainWindowState>>,
+) {
     let unread_hover_hide_timer = Rc::new(Timer::default());
+    let persisted_main_window_path = main_window_state_path();
+    let resize_state = main_window_state.clone();
+    let resize_path = persisted_main_window_path.clone();
+    main_window.window().on_winit_window_event(move |window, event| {
+        if matches!(
+            event,
+            winit::event::WindowEvent::Resized(_)
+                | winit::event::WindowEvent::ScaleFactorChanged { .. }
+        ) {
+            persist_main_window_state(window, &resize_path, &resize_state);
+        }
+        slint::winit_030::EventResult::Propagate
+    });
 
     let pin_bridge = bridge.clone();
     main_window.on_toggle_always_on_top(move || {
@@ -377,7 +402,13 @@ fn wire_main_window(main_window: &MainWindow, bridge: UiBridge) {
     });
 
     let hide_bridge = bridge.clone();
+    let hide_window = main_window.as_weak();
+    let hide_state = main_window_state.clone();
+    let hide_path = persisted_main_window_path.clone();
     main_window.on_hide_main(move || {
+        if let Some(main_window) = hide_window.upgrade() {
+            persist_main_window_state(&main_window.window(), &hide_path, &hide_state);
+        }
         hide_bridge.set_main_visibility(false);
     });
 
@@ -387,7 +418,13 @@ fn wire_main_window(main_window: &MainWindow, bridge: UiBridge) {
     });
 
     let quit_bridge = bridge.clone();
+    let quit_window = main_window.as_weak();
+    let quit_state = main_window_state.clone();
+    let quit_path = persisted_main_window_path.clone();
     main_window.on_quit_app(move || {
+        if let Some(main_window) = quit_window.upgrade() {
+            persist_main_window_state(&main_window.window(), &quit_path, &quit_state);
+        }
         quit_bridge.runtime.request_quit();
         let _ = slint::quit_event_loop();
     });
@@ -421,10 +458,43 @@ fn wire_main_window(main_window: &MainWindow, bridge: UiBridge) {
     });
 
     let close_bridge = bridge;
+    let close_window = main_window.as_weak();
+    let close_state = main_window_state;
+    let close_path = persisted_main_window_path;
     main_window.window().on_close_requested(move || {
+        if let Some(main_window) = close_window.upgrade() {
+            persist_main_window_state(&main_window.window(), &close_path, &close_state);
+        }
         close_bridge.mark_main_hidden();
         CloseRequestResponse::HideWindow
     });
+}
+
+fn apply_main_window_state(main_window: &MainWindow, state: MainWindowState) {
+    let state = state.sanitized();
+    main_window
+        .window()
+        .set_size(SlintLogicalSize::new(state.width, state.height));
+    main_window.window().set_maximized(state.maximized);
+}
+
+fn persist_main_window_state(
+    window: &slint::Window,
+    path: &Path,
+    state: &Rc<RefCell<MainWindowState>>,
+) {
+    let mut next = *state.borrow();
+    next.maximized = window.is_maximized();
+
+    if !next.maximized {
+        let logical_size = window.size().to_logical(window.scale_factor());
+        next.width = logical_size.width;
+        next.height = logical_size.height;
+    }
+
+    let next = next.sanitized();
+    *state.borrow_mut() = next;
+    let _ = save_main_window_state(path, &next);
 }
 
 fn wire_widget_window(
