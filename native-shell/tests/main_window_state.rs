@@ -1,6 +1,14 @@
 use signal_desk_native::app_state::AppState;
 use signal_desk_native::runtime::{runtime_snapshot_from_config, AppConfig, WatchGroup};
 
+fn visible_row_titles(snapshot: &signal_desk_native::app_state::UiSnapshot) -> Vec<String> {
+    snapshot
+        .signal_rows
+        .iter()
+        .map(|row| row.title.clone())
+        .collect()
+}
+
 #[test]
 fn ui_snapshot_exposes_runtime_control_state() {
     let mut config = AppConfig {
@@ -337,4 +345,142 @@ fn unread_items_follow_signal_order_and_clear_after_mark_read() {
     assert_eq!(after.unread_items.len(), 1);
     assert_eq!(after.unread_items[0].row_index, 1);
     assert_eq!(after.unread_items[0].period, "60");
+}
+
+#[test]
+fn signal_rows_can_sort_by_recency_within_group_only() {
+    let config = AppConfig {
+        groups: vec![
+            WatchGroup {
+                id: "group-btc".into(),
+                name: "BTC Main".into(),
+                symbol: "BTCUSDT".into(),
+                periods: vec!["60".into(), "15".into(), "5".into()],
+                signal_types: vec!["divMacd".into()],
+                enabled: true,
+            },
+            WatchGroup {
+                id: "group-eth".into(),
+                name: "ETH Main".into(),
+                symbol: "ETHUSDT".into(),
+                periods: vec!["60".into(), "15".into()],
+                signal_types: vec!["divMacd".into()],
+                enabled: true,
+            },
+        ],
+        ..Default::default()
+    };
+    let mut runtime_snapshot = runtime_snapshot_from_config(config);
+    let now_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as i64;
+
+    runtime_snapshot.signals[0].group_id = "group-btc".into();
+    runtime_snapshot.signals[0].group_name = "BTC Main".into();
+    runtime_snapshot.signals[0].symbol = "BTCUSDT".into();
+    runtime_snapshot.signals[0].period = "60".into();
+    runtime_snapshot.signals[0].trigger_time = now_ms - 3 * 60 * 60 * 1000;
+
+    runtime_snapshot.signals[1].group_id = "group-btc".into();
+    runtime_snapshot.signals[1].group_name = "BTC Main".into();
+    runtime_snapshot.signals[1].symbol = "BTCUSDT".into();
+    runtime_snapshot.signals[1].period = "15".into();
+    runtime_snapshot.signals[1].trigger_time = now_ms - 15 * 60 * 1000;
+
+    runtime_snapshot.signals[2].group_id = "group-btc".into();
+    runtime_snapshot.signals[2].group_name = "BTC Main".into();
+    runtime_snapshot.signals[2].symbol = "BTCUSDT".into();
+    runtime_snapshot.signals[2].period = "5".into();
+    runtime_snapshot.signals[2].trigger_time = now_ms - 5 * 60 * 1000;
+
+    runtime_snapshot.signals[3].group_id = "group-eth".into();
+    runtime_snapshot.signals[3].group_name = "ETH Main".into();
+    runtime_snapshot.signals[3].symbol = "ETHUSDT".into();
+    runtime_snapshot.signals[3].period = "60".into();
+    runtime_snapshot.signals[3].trigger_time = now_ms - 60 * 60 * 1000;
+
+    runtime_snapshot.signals[4].group_id = "group-eth".into();
+    runtime_snapshot.signals[4].group_name = "ETH Main".into();
+    runtime_snapshot.signals[4].symbol = "ETHUSDT".into();
+    runtime_snapshot.signals[4].period = "15".into();
+    runtime_snapshot.signals[4].trigger_time = now_ms - 30 * 60 * 1000;
+
+    let mut state = AppState::new(runtime_snapshot);
+
+    assert_eq!(
+        visible_row_titles(&state.snapshot()),
+        vec!["BTCUSDT", "60", "15", "5", "ETHUSDT", "60", "15"]
+    );
+
+    state.toggle_signal_row_sort_mode_at(0);
+
+    assert_eq!(
+        visible_row_titles(&state.snapshot()),
+        vec!["BTCUSDT", "5", "15", "60", "ETHUSDT", "60", "15"]
+    );
+}
+
+#[test]
+fn signal_row_sort_is_configured_per_section() {
+    let config = AppConfig {
+        groups: vec![
+            WatchGroup {
+                id: "group-btc".into(),
+                name: "BTC Main".into(),
+                symbol: "BTCUSDT".into(),
+                periods: vec!["60".into(), "15".into(), "5".into()],
+                signal_types: vec!["divMacd".into()],
+                enabled: true,
+            },
+            WatchGroup {
+                id: "group-eth".into(),
+                name: "ETH Main".into(),
+                symbol: "ETHUSDT".into(),
+                periods: vec!["60".into(), "15".into(), "5".into()],
+                signal_types: vec!["divMacd".into()],
+                enabled: true,
+            },
+        ],
+        ..Default::default()
+    };
+    let mut runtime_snapshot = runtime_snapshot_from_config(config);
+    let now_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as i64;
+
+    for (index, (group_id, group_name, symbol, period, age_minutes)) in [
+        ("group-btc", "BTC Main", "BTCUSDT", "60", 180),
+        ("group-btc", "BTC Main", "BTCUSDT", "15", 15),
+        ("group-btc", "BTC Main", "BTCUSDT", "5", 5),
+        ("group-eth", "ETH Main", "ETHUSDT", "60", 180),
+        ("group-eth", "ETH Main", "ETHUSDT", "15", 15),
+        ("group-eth", "ETH Main", "ETHUSDT", "5", 5),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        runtime_snapshot.signals[index].group_id = group_id.into();
+        runtime_snapshot.signals[index].group_name = group_name.into();
+        runtime_snapshot.signals[index].symbol = symbol.into();
+        runtime_snapshot.signals[index].period = period.into();
+        runtime_snapshot.signals[index].trigger_time = now_ms - age_minutes * 60 * 1000;
+    }
+
+    let mut state = AppState::new(runtime_snapshot);
+    let before = state.snapshot();
+
+    assert_eq!(before.signal_rows[0].sort_label, "配置");
+    assert_eq!(before.signal_rows[4].sort_label, "配置");
+
+    state.toggle_signal_row_sort_mode_at(0);
+
+    let after = state.snapshot();
+    assert_eq!(after.signal_rows[0].sort_label, "最近");
+    assert_eq!(after.signal_rows[4].sort_label, "配置");
+    assert_eq!(
+        visible_row_titles(&after),
+        vec!["BTCUSDT", "5", "15", "60", "ETHUSDT", "60", "15", "5"]
+    );
 }

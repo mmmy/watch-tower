@@ -7,6 +7,7 @@ export struct SignalRowData {
     unread: bool,
     pending: bool,
     unread_count: int,
+    sort_label: string,
     timeline_visible: bool,
     timeline_ratio: float,
     timeline_positive: bool,
@@ -194,6 +195,7 @@ export component MainWindow inherits Window {
     callback hide-main();
     callback save-config();
     callback quit-app();
+    callback toggle-signal-sort-mode(int);
     callback toggle-signal-read(int);
     callback unread-hover-started();
     callback unread-hover-ended();
@@ -610,6 +612,19 @@ export component MainWindow inherits Window {
                                 overflow: elide;
                             }
 
+                            PlainButton {
+                                x: parent.width - self.width - 6px;
+                                y: 4px;
+                                width: 40px;
+                                height: 16px;
+                                text: signal-row.sort_label;
+                                text-size: 9px;
+                                visible: signal-row.is_header;
+                                clicked => {
+                                    root.toggle-signal-sort-mode(index);
+                                }
+                            }
+
                             Rectangle {
                                 x: 90px;
                                 y: 6px;
@@ -634,7 +649,7 @@ export component MainWindow inherits Window {
                             Text {
                                 x: signal-row.is_header ? 6px : 58px;
                                 y: signal-row.is_header ? 22px : 4px;
-                                width: signal-row.is_header ? parent.width - 86px : 0px;
+                                width: signal-row.is_header ? parent.width - 92px : 0px;
                                 text: signal-row.meta;
                                 color: signal-row.unread ? #404040 : #707070;
                                 font-size: signal-row.is_header ? 11px : 10px;

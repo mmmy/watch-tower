@@ -401,6 +401,15 @@ fn wire_main_window(
         widget_bridge.toggle_widget();
     });
 
+    let sort_bridge = bridge.clone();
+    main_window.on_toggle_signal_sort_mode(move |index| {
+        {
+            let mut state = sort_bridge.state.lock().expect("state poisoned");
+            state.toggle_signal_row_sort_mode_at(index as usize);
+        }
+        sort_bridge.refresh_ui();
+    });
+
     let hide_bridge = bridge.clone();
     let hide_window = main_window.as_weak();
     let hide_state = main_window_state.clone();
@@ -725,6 +734,7 @@ fn apply_snapshot_to_main(main_window: &MainWindow, snapshot: &UiSnapshot) {
             unread: row.unread,
             pending: row.pending,
             unread_count: row.unread_count,
+            sort_label: SharedString::from(row.sort_label.as_str()),
             timeline_visible: row.timeline_visible,
             timeline_ratio: row.timeline_ratio,
             timeline_positive: row.timeline_positive,

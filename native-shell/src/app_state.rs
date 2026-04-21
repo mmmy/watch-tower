@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use crate::runtime::{RuntimeSignal, RuntimeSnapshot, SignalMutationInput};
 use chrono::{Local, TimeZone};
 
@@ -34,6 +36,7 @@ pub struct UiSignalRow {
     pub unread: bool,
     pub pending: bool,
     pub unread_count: i32,
+    pub sort_label: String,
     pub timeline_visible: bool,
     pub timeline_ratio: f32,
     pub timeline_positive: bool,
@@ -62,6 +65,19 @@ struct SignalRowView {
     row: UiSignalRow,
     action: Option<RowAction>,
     unread_item: Option<UiUnreadItem>,
+    section_key: Option<SignalSectionKey>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum SignalRowSortMode {
+    ConfigOrder,
+    RecentFirst,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+struct SignalSectionKey {
+    group_id: String,
+    signal_type: String,
 }
 
 #[derive(Debug)]
@@ -69,6 +85,7 @@ pub struct AppState {
     runtime_snapshot: RuntimeSnapshot,
     last_error: Option<String>,
     pending_mark_read: Vec<SignalMutationInput>,
+    signal_row_sort_modes: HashMap<SignalSectionKey, SignalRowSortMode>,
     main_visible: bool,
     widget_visible: bool,
 }
@@ -79,6 +96,7 @@ impl AppState {
             runtime_snapshot,
             last_error: None,
             pending_mark_read: Vec::new(),
+            signal_row_sort_modes: HashMap::new(),
             main_visible: true,
             widget_visible: true,
         }
@@ -205,6 +223,27 @@ impl AppState {
         self.widget_visible
     }
 
+    pub fn toggle_signal_row_sort_mode_at(&mut self, index: usize) {
+        let Some(section_key) = self
+            .build_signal_row_views()
+            .get(index)
+            .and_then(|entry| entry.section_key.clone())
+        else {
+            return;
+        };
+
+        let next_mode = match self.sort_mode_for_section(&section_key) {
+            SignalRowSortMode::ConfigOrder => SignalRowSortMode::RecentFirst,
+            SignalRowSortMode::RecentFirst => SignalRowSortMode::ConfigOrder,
+        };
+
+        if matches!(next_mode, SignalRowSortMode::ConfigOrder) {
+            self.signal_row_sort_modes.remove(&section_key);
+        } else {
+            self.signal_row_sort_modes.insert(section_key, next_mode);
+        }
+    }
+
     pub fn update_runtime_snapshot(&mut self, snapshot: RuntimeSnapshot) {
         self.runtime_snapshot = snapshot;
         self.last_error = None;
@@ -253,6 +292,7 @@ impl AppState {
     }
 
     fn build_signal_row_views(&self) -> Vec<SignalRowView> {
+        let now_ms = current_time_ms();
         let mut rows = Vec::new();
         for group in self
             .runtime_snapshot
@@ -282,22 +322,44 @@ impl AppState {
                 if signals.is_empty() {
                     continue;
                 }
+                let section_key = SignalSectionKey {
+                    group_id: group.id.clone(),
+                    signal_type: signal_type.clone(),
+                };
+                let mut signals = signals
+                    .into_iter()
+                    .enumerate()
+                    .collect::<Vec<_>>();
+
+                if matches!(
+                    self.sort_mode_for_section(&section_key),
+                    SignalRowSortMode::RecentFirst
+                ) {
+                    signals.sort_by(|(left_index, left_signal), (right_index, right_signal)| {
+                        compare_signal_recency(left_signal, right_signal, now_ms)
+                            .then_with(|| left_index.cmp(right_index))
+                    });
+                }
 
                 rows.push(SignalRowView {
                     row: UiSignalRow {
                         title: signals
                             .first()
-                            .map(|signal| signal.symbol.clone())
+                            .map(|(_, signal)| signal.symbol.clone())
                             .unwrap_or_default(),
                         meta: format!("{}  {}", group.name, signal_type),
                         is_header: true,
-                        unread: signals.iter().any(|signal| signal.unread),
-                        pending: signals.iter().any(|signal| {
+                        unread: signals.iter().any(|(_, signal)| signal.unread),
+                        pending: signals.iter().any(|(_, signal)| {
                             self.pending_mark_read
                                 .iter()
                                 .any(|pending| pending == &signal_to_key(signal))
                         }),
-                        unread_count: signals.iter().filter(|signal| signal.unread).count() as i32,
+                        unread_count: signals
+                            .iter()
+                            .filter(|(_, signal)| signal.unread)
+                            .count() as i32,
+                        sort_label: self.sort_mode_for_section(&section_key).label().to_string(),
                         timeline_visible: false,
                         timeline_ratio: 0.0,
                         timeline_positive: true,
@@ -305,8 +367,8 @@ impl AppState {
                     action: {
                         let unread_keys = signals
                             .iter()
-                            .filter(|signal| signal.unread)
-                            .map(signal_to_key)
+                            .filter(|(_, signal)| signal.unread)
+                            .map(|(_, signal)| signal_to_key(signal))
                             .collect::<Vec<_>>();
                         if unread_keys.is_empty() {
                             None
@@ -315,12 +377,13 @@ impl AppState {
                         }
                     },
                     unread_item: None,
+                    section_key: Some(section_key),
                 });
 
-                for signal in signals {
+                for (_, signal) in signals {
                     let key = signal_to_key(&signal);
                     let side = if signal.side >= 0 { "多" } else { "空" };
-                    let timeline_ratio = timeline_marker_ratio(&signal, current_time_ms());
+                    let timeline_ratio = timeline_marker_ratio(&signal, now_ms);
                     let row_index = rows.len() as i32;
 
                     rows.push(SignalRowView {
@@ -331,6 +394,7 @@ impl AppState {
                             unread: signal.unread,
                             pending: self.pending_mark_read.iter().any(|pending| pending == &key),
                             unread_count: 0,
+                            sort_label: String::new(),
                             timeline_visible: timeline_ratio.is_some(),
                             timeline_ratio: timeline_ratio.unwrap_or(0.0),
                             timeline_positive: signal.side >= 0,
@@ -352,6 +416,7 @@ impl AppState {
                             ),
                             trigger_time: signal.trigger_time,
                         }),
+                        section_key: None,
                     });
                 }
             }
@@ -388,6 +453,13 @@ impl AppState {
             .iter()
             .filter(|signal| signal.unread && !signal.deleted)
             .count();
+    }
+
+    fn sort_mode_for_section(&self, section_key: &SignalSectionKey) -> SignalRowSortMode {
+        self.signal_row_sort_modes
+            .get(section_key)
+            .copied()
+            .unwrap_or(SignalRowSortMode::ConfigOrder)
     }
 }
 
@@ -483,6 +555,34 @@ fn bool_label(value: bool) -> &'static str {
         "开"
     } else {
         "关"
+    }
+}
+
+impl SignalRowSortMode {
+    fn label(self) -> &'static str {
+        match self {
+            SignalRowSortMode::ConfigOrder => "配置",
+            SignalRowSortMode::RecentFirst => "最近",
+        }
+    }
+}
+
+fn compare_signal_recency(
+    left: &RuntimeSignal,
+    right: &RuntimeSignal,
+    now_ms: i64,
+) -> std::cmp::Ordering {
+    match (
+        timeline_marker_ratio(left, now_ms),
+        timeline_marker_ratio(right, now_ms),
+    ) {
+        (Some(left_ratio), Some(right_ratio)) => right_ratio
+            .partial_cmp(&left_ratio)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| right.trigger_time.cmp(&left.trigger_time)),
+        (Some(_), None) => std::cmp::Ordering::Less,
+        (None, Some(_)) => std::cmp::Ordering::Greater,
+        (None, None) => std::cmp::Ordering::Equal,
     }
 }
 
