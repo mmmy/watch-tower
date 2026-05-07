@@ -1,6 +1,7 @@
-use std::collections::HashMap;
-
-use crate::runtime::{RuntimeSignal, RuntimeSnapshot, SignalMutationInput};
+use crate::runtime::{
+    clamp_timeline_bars, RuntimeSignal, RuntimeSnapshot, SignalMutationInput,
+    WatchGroupRowSortMode,
+};
 use chrono::{Local, TimeZone};
 
 #[derive(Clone, Debug)]
@@ -37,6 +38,8 @@ pub struct UiSignalRow {
     pub pending: bool,
     pub unread_count: i32,
     pub sort_label: String,
+    pub timeline_bars: i32,
+    pub sort_recent: bool,
     pub timeline_visible: bool,
     pub timeline_ratio: f32,
     pub timeline_positive: bool,
@@ -68,12 +71,6 @@ struct SignalRowView {
     section_key: Option<SignalSectionKey>,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum SignalRowSortMode {
-    ConfigOrder,
-    RecentFirst,
-}
-
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 struct SignalSectionKey {
     group_id: String,
@@ -85,7 +82,6 @@ pub struct AppState {
     runtime_snapshot: RuntimeSnapshot,
     last_error: Option<String>,
     pending_mark_read: Vec<SignalMutationInput>,
-    signal_row_sort_modes: HashMap<SignalSectionKey, SignalRowSortMode>,
     main_visible: bool,
     widget_visible: bool,
 }
@@ -96,7 +92,6 @@ impl AppState {
             runtime_snapshot,
             last_error: None,
             pending_mark_read: Vec::new(),
-            signal_row_sort_modes: HashMap::new(),
             main_visible: true,
             widget_visible: true,
         }
@@ -233,15 +228,81 @@ impl AppState {
         };
 
         let next_mode = match self.sort_mode_for_section(&section_key) {
-            SignalRowSortMode::ConfigOrder => SignalRowSortMode::RecentFirst,
-            SignalRowSortMode::RecentFirst => SignalRowSortMode::ConfigOrder,
+            WatchGroupRowSortMode::ConfigOrder => WatchGroupRowSortMode::RecentFirst,
+            WatchGroupRowSortMode::RecentFirst => WatchGroupRowSortMode::ConfigOrder,
         };
 
-        if matches!(next_mode, SignalRowSortMode::ConfigOrder) {
-            self.signal_row_sort_modes.remove(&section_key);
-        } else {
-            self.signal_row_sort_modes.insert(section_key, next_mode);
+        if let Some(group) = self
+            .runtime_snapshot
+            .config
+            .groups
+            .iter_mut()
+            .find(|group| group.id == section_key.group_id)
+        {
+            group.row_sort_mode = next_mode;
         }
+    }
+
+    pub fn adjust_signal_timeline_bars_at(&mut self, index: usize, delta: i64) {
+        let Some(section_key) = self
+            .build_signal_row_views()
+            .get(index)
+            .and_then(|entry| entry.section_key.clone())
+        else {
+            return;
+        };
+
+        if let Some(group) = self
+            .runtime_snapshot
+            .config
+            .groups
+            .iter_mut()
+            .find(|group| group.id == section_key.group_id)
+        {
+            group.timeline_bars = clamp_timeline_bars(group.timeline_bars + delta);
+        }
+    }
+
+    pub fn set_signal_timeline_bars_at(&mut self, index: usize, timeline_bars: i64) {
+        let Some(section_key) = self
+            .build_signal_row_views()
+            .get(index)
+            .and_then(|entry| entry.section_key.clone())
+        else {
+            return;
+        };
+
+        if let Some(group) = self
+            .runtime_snapshot
+            .config
+            .groups
+            .iter_mut()
+            .find(|group| group.id == section_key.group_id)
+        {
+            group.timeline_bars = clamp_timeline_bars(timeline_bars);
+        }
+    }
+
+    pub fn group_display_settings_at(
+        &self,
+        index: usize,
+    ) -> Option<(String, WatchGroupRowSortMode, i64)> {
+        let section_key = self
+            .build_signal_row_views()
+            .get(index)
+            .and_then(|entry| entry.section_key.clone())?;
+        let group = self
+            .runtime_snapshot
+            .config
+            .groups
+            .iter()
+            .find(|group| group.id == section_key.group_id)?;
+
+        Some((
+            group.id.clone(),
+            group.row_sort_mode,
+            clamp_timeline_bars(group.timeline_bars),
+        ))
     }
 
     pub fn update_runtime_snapshot(&mut self, snapshot: RuntimeSnapshot) {
@@ -331,12 +392,12 @@ impl AppState {
                     .enumerate()
                     .collect::<Vec<_>>();
 
-                if matches!(
-                    self.sort_mode_for_section(&section_key),
-                    SignalRowSortMode::RecentFirst
-                ) {
+                let sort_mode = self.sort_mode_for_section(&section_key);
+                let timeline_bars = self.timeline_bars_for_section(&section_key);
+
+                if matches!(sort_mode, WatchGroupRowSortMode::RecentFirst) {
                     signals.sort_by(|(left_index, left_signal), (right_index, right_signal)| {
-                        compare_signal_recency(left_signal, right_signal, now_ms)
+                        compare_signal_recency(left_signal, right_signal, now_ms, timeline_bars)
                             .then_with(|| left_index.cmp(right_index))
                     });
                 }
@@ -359,7 +420,9 @@ impl AppState {
                             .iter()
                             .filter(|(_, signal)| signal.unread)
                             .count() as i32,
-                        sort_label: self.sort_mode_for_section(&section_key).label().to_string(),
+                        sort_label: format!("{}·{} ▾", sort_mode.short_label(), timeline_bars),
+                        timeline_bars: timeline_bars as i32,
+                        sort_recent: matches!(sort_mode, WatchGroupRowSortMode::RecentFirst),
                         timeline_visible: false,
                         timeline_ratio: 0.0,
                         timeline_positive: true,
@@ -383,7 +446,7 @@ impl AppState {
                 for (_, signal) in signals {
                     let key = signal_to_key(&signal);
                     let side = if signal.side >= 0 { "多" } else { "空" };
-                    let timeline_ratio = timeline_marker_ratio(&signal, now_ms);
+                    let timeline_ratio = timeline_marker_ratio(&signal, now_ms, timeline_bars);
                     let row_index = rows.len() as i32;
 
                     rows.push(SignalRowView {
@@ -395,6 +458,8 @@ impl AppState {
                             pending: self.pending_mark_read.iter().any(|pending| pending == &key),
                             unread_count: 0,
                             sort_label: String::new(),
+                            timeline_bars: 0,
+                            sort_recent: false,
                             timeline_visible: timeline_ratio.is_some(),
                             timeline_ratio: timeline_ratio.unwrap_or(0.0),
                             timeline_positive: signal.side >= 0,
@@ -455,11 +520,24 @@ impl AppState {
             .count();
     }
 
-    fn sort_mode_for_section(&self, section_key: &SignalSectionKey) -> SignalRowSortMode {
-        self.signal_row_sort_modes
-            .get(section_key)
-            .copied()
-            .unwrap_or(SignalRowSortMode::ConfigOrder)
+    fn sort_mode_for_section(&self, section_key: &SignalSectionKey) -> WatchGroupRowSortMode {
+        self.runtime_snapshot
+            .config
+            .groups
+            .iter()
+            .find(|group| group.id == section_key.group_id)
+            .map(|group| group.row_sort_mode)
+            .unwrap_or_default()
+    }
+
+    fn timeline_bars_for_section(&self, section_key: &SignalSectionKey) -> i64 {
+        self.runtime_snapshot
+            .config
+            .groups
+            .iter()
+            .find(|group| group.id == section_key.group_id)
+            .map(|group| clamp_timeline_bars(group.timeline_bars))
+            .unwrap_or(60)
     }
 }
 
@@ -471,13 +549,12 @@ fn signal_to_key(signal: &RuntimeSignal) -> SignalMutationInput {
     }
 }
 
-fn timeline_marker_ratio(signal: &RuntimeSignal, now_ms: i64) -> Option<f32> {
-    const CELL_COUNT: i64 = 60;
-
+fn timeline_marker_ratio(signal: &RuntimeSignal, now_ms: i64, cell_count: i64) -> Option<f32> {
     if signal.trigger_time <= 0 {
         return None;
     }
 
+    let cell_count = clamp_timeline_bars(cell_count).max(2);
     let period_ms = period_to_ms(&signal.period)?;
     if period_ms <= 0 {
         return None;
@@ -485,12 +562,12 @@ fn timeline_marker_ratio(signal: &RuntimeSignal, now_ms: i64) -> Option<f32> {
 
     let elapsed_ms = now_ms.saturating_sub(signal.trigger_time).max(0);
     let candles_ago = elapsed_ms / period_ms;
-    let active_index = CELL_COUNT - 1 - candles_ago;
-    if !(0..CELL_COUNT).contains(&active_index) {
+    let active_index = cell_count - 1 - candles_ago;
+    if !(0..cell_count).contains(&active_index) {
         return None;
     }
 
-    Some(active_index as f32 / (CELL_COUNT - 1) as f32)
+    Some(active_index as f32 / (cell_count - 1) as f32)
 }
 
 fn period_to_ms(period: &str) -> Option<i64> {
@@ -558,11 +635,11 @@ fn bool_label(value: bool) -> &'static str {
     }
 }
 
-impl SignalRowSortMode {
-    fn label(self) -> &'static str {
+impl WatchGroupRowSortMode {
+    fn short_label(self) -> &'static str {
         match self {
-            SignalRowSortMode::ConfigOrder => "配置",
-            SignalRowSortMode::RecentFirst => "最近",
+            WatchGroupRowSortMode::ConfigOrder => "配",
+            WatchGroupRowSortMode::RecentFirst => "近",
         }
     }
 }
@@ -571,10 +648,11 @@ fn compare_signal_recency(
     left: &RuntimeSignal,
     right: &RuntimeSignal,
     now_ms: i64,
+    timeline_bars: i64,
 ) -> std::cmp::Ordering {
     match (
-        timeline_marker_ratio(left, now_ms),
-        timeline_marker_ratio(right, now_ms),
+        timeline_marker_ratio(left, now_ms, timeline_bars),
+        timeline_marker_ratio(right, now_ms, timeline_bars),
     ) {
         (Some(left_ratio), Some(right_ratio)) => right_ratio
             .partial_cmp(&left_ratio)

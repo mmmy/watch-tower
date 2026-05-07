@@ -8,6 +8,8 @@ export struct SignalRowData {
     pending: bool,
     unread_count: int,
     sort_label: string,
+    timeline_bars: int,
+    sort_recent: bool,
     timeline_visible: bool,
     timeline_ratio: float,
     timeline_positive: bool,
@@ -51,6 +53,66 @@ component PlainButton inherits Rectangle {
         font-size: root.text-size;
         horizontal-alignment: center;
         overflow: elide;
+    }
+}
+
+component InlineMenuTag inherits Rectangle {
+    in property <string> text;
+    callback clicked();
+
+    min-width: 48px;
+    height: 16px;
+    border-width: 0px;
+    border-radius: 3px;
+    background: inline-touch.has-hover ? #ececec : transparent;
+
+    inline-touch := TouchArea {
+        mouse-cursor: pointer;
+
+        clicked => {
+            root.clicked();
+        }
+    }
+
+    Text {
+        x: 4px;
+        y: 2px;
+        width: parent.width - 8px;
+        text: root.text;
+        color: #505050;
+        font-size: 9px;
+        horizontal-alignment: right;
+        overflow: clip;
+    }
+}
+
+component MiniValueChip inherits Rectangle {
+    in property <string> text;
+    callback clicked();
+
+    min-width: 22px;
+    height: 18px;
+    border-width: 1px;
+    border-radius: 3px;
+    border-color: chip-touch.has-hover ? #9d9d9d : #c5c5c5;
+    background: chip-touch.has-hover ? #f0f0f0 : #fafafa;
+
+    chip-touch := TouchArea {
+        mouse-cursor: pointer;
+
+        clicked => {
+            root.clicked();
+        }
+    }
+
+    Text {
+        y: 3px;
+        width: parent.width;
+        text: root.text;
+        color: #303030;
+        font-size: 9px;
+        horizontal-alignment: center;
+        overflow: clip;
     }
 }
 
@@ -196,6 +258,8 @@ export component MainWindow inherits Window {
     callback save-config();
     callback quit-app();
     callback toggle-signal-sort-mode(int);
+    callback adjust-signal-timeline-bars(int, int);
+    callback set-signal-timeline-bars(int, int);
     callback toggle-signal-read(int);
     callback unread-hover-started();
     callback unread-hover-ended();
@@ -612,16 +676,164 @@ export component MainWindow inherits Window {
                                 overflow: elide;
                             }
 
-                            PlainButton {
+                            InlineMenuTag {
                                 x: parent.width - self.width - 6px;
                                 y: 4px;
-                                width: 40px;
+                                width: 50px;
                                 height: 16px;
                                 text: signal-row.sort_label;
-                                text-size: 9px;
                                 visible: signal-row.is_header;
                                 clicked => {
-                                    root.toggle-signal-sort-mode(index);
+                                    settings-popup.show();
+                                }
+                            }
+
+                            settings-popup := PopupWindow {
+                                x: parent.width - self.width - 6px;
+                                y: 22px;
+                                width: 144px;
+                                height: 122px;
+                                close-policy: close-on-click-outside;
+
+                                Rectangle {
+                                    border-width: 1px;
+                                    border-color: #cfcfcf;
+                                    background: #fbfbfb;
+
+                                    Text {
+                                        x: 8px;
+                                        y: 8px;
+                                        width: parent.width - 16px;
+                                        text: "当前: " + (signal-row.sort_recent ? "最近" : "配置")
+                                            + " · " + signal-row.timeline_bars + " 根";
+                                        color: #404040;
+                                        font-size: 10px;
+                                        overflow: elide;
+                                    }
+
+                                    PlainButton {
+                                        x: 8px;
+                                        y: 26px;
+                                        width: 52px;
+                                        height: 18px;
+                                        text: "配置";
+                                        text-size: 9px;
+                                        clicked => {
+                                            if (signal-row.sort_recent) {
+                                                root.toggle-signal-sort-mode(index);
+                                            }
+                                            settings-popup.close();
+                                        }
+                                    }
+
+                                    PlainButton {
+                                        x: 66px;
+                                        y: 26px;
+                                        width: 52px;
+                                        height: 18px;
+                                        text: "最近";
+                                        text-size: 9px;
+                                        clicked => {
+                                            if (!signal-row.sort_recent) {
+                                                root.toggle-signal-sort-mode(index);
+                                            }
+                                            settings-popup.close();
+                                        }
+                                    }
+
+                                    Text {
+                                        x: 8px;
+                                        y: 52px;
+                                        width: parent.width - 16px;
+                                        text: "窗口: " + signal-row.timeline_bars + " 根";
+                                        color: #404040;
+                                        font-size: 10px;
+                                        overflow: elide;
+                                    }
+
+                                    PlainButton {
+                                        x: 8px;
+                                        y: 70px;
+                                        width: 20px;
+                                        height: 18px;
+                                        text: "-";
+                                        text-size: 9px;
+                                        clicked => {
+                                            root.adjust-signal-timeline-bars(index, -20);
+                                        }
+                                    }
+
+                                    PlainButton {
+                                        x: 34px;
+                                        y: 70px;
+                                        width: 20px;
+                                        height: 18px;
+                                        text: "+";
+                                        text-size: 9px;
+                                        clicked => {
+                                            root.adjust-signal-timeline-bars(index, 20);
+                                        }
+                                    }
+
+                                    MiniValueChip {
+                                        x: 60px;
+                                        y: 70px;
+                                        width: 22px;
+                                        height: 18px;
+                                        text: "20";
+                                        clicked => {
+                                            root.set-signal-timeline-bars(index, 20);
+                                            settings-popup.close();
+                                        }
+                                    }
+
+                                    MiniValueChip {
+                                        x: 88px;
+                                        y: 70px;
+                                        width: 22px;
+                                        height: 18px;
+                                        text: "30";
+                                        clicked => {
+                                            root.set-signal-timeline-bars(index, 30);
+                                            settings-popup.close();
+                                        }
+                                    }
+
+                                    MiniValueChip {
+                                        x: 116px;
+                                        y: 70px;
+                                        width: 22px;
+                                        height: 18px;
+                                        text: "60";
+                                        clicked => {
+                                            root.set-signal-timeline-bars(index, 60);
+                                            settings-popup.close();
+                                        }
+                                    }
+
+                                    MiniValueChip {
+                                        x: 8px;
+                                        y: 94px;
+                                        width: 30px;
+                                        height: 18px;
+                                        text: "40";
+                                        clicked => {
+                                            root.set-signal-timeline-bars(index, 40);
+                                            settings-popup.close();
+                                        }
+                                    }
+
+                                    MiniValueChip {
+                                        x: 44px;
+                                        y: 94px;
+                                        width: 30px;
+                                        height: 18px;
+                                        text: "120";
+                                        clicked => {
+                                            root.set-signal-timeline-bars(index, 120);
+                                            settings-popup.close();
+                                        }
+                                    }
                                 }
                             }
 

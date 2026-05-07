@@ -17,8 +17,10 @@ groups:
   - id: "group-1"
     name: "BTC Main"
     symbol: "BTCUSDT"
-    periods: ["10D", "W", "4D", "3D", "2D", "D", "720", "480", "360", "240", "180", "120", "90", "60", "45", "30", "20", "15", "10", "8", "5", "4", "3", "2", "1"]
+    periods: ["10D", "W", "4D", "3D", "2D", "D", "720", "480", "360", "240", "180", "120", "90", "60", "45", "30", "20", "15", "10", "8", "5", "4", "3", "2", "1", "45S", "30S", "15S"]
     signal_types: ["vegas"]
+    row_sort_mode: "config_order"
+    timeline_bars: 60
     enabled: true
 
   - id: "group-2"
@@ -26,4 +28,6 @@ groups:
     symbol: "ETHUSDT"
     periods: ["10D", "W", "4D", "3D", "2D", "D", "720", "480", "360", "240", "180", "120", "90", "60", "45", "30", "20", "15", "10", "8", "5", "4", "3", "2", "1"]
     signal_types: ["divMacd"]
+    row_sort_mode: "config_order"
+    timeline_bars: 60
     enabled: true

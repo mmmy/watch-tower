@@ -403,11 +403,55 @@ fn wire_main_window(
 
     let sort_bridge = bridge.clone();
     main_window.on_toggle_signal_sort_mode(move |index| {
-        {
+        let settings = {
             let mut state = sort_bridge.state.lock().expect("state poisoned");
             state.toggle_signal_row_sort_mode_at(index as usize);
+            state.group_display_settings_at(index as usize)
+        };
+        if let Some((group_id, sort_mode, _)) = settings {
+            sort_bridge
+                .runtime
+                .request_set_group_row_sort_mode(group_id, sort_mode);
         }
         sort_bridge.refresh_ui();
+    });
+
+    let timeline_step_bridge = bridge.clone();
+    main_window.on_adjust_signal_timeline_bars(move |index, delta| {
+        {
+            let mut state = timeline_step_bridge.state.lock().expect("state poisoned");
+            state.adjust_signal_timeline_bars_at(index as usize, delta as i64);
+        }
+        if let Some((group_id, _, timeline_bars)) = timeline_step_bridge
+            .state
+            .lock()
+            .expect("state poisoned")
+            .group_display_settings_at(index as usize)
+        {
+            timeline_step_bridge
+                .runtime
+                .request_set_group_timeline_bars(group_id, timeline_bars);
+        }
+        timeline_step_bridge.refresh_ui();
+    });
+
+    let timeline_preset_bridge = bridge.clone();
+    main_window.on_set_signal_timeline_bars(move |index, timeline_bars| {
+        {
+            let mut state = timeline_preset_bridge.state.lock().expect("state poisoned");
+            state.set_signal_timeline_bars_at(index as usize, timeline_bars as i64);
+        }
+        if let Some((group_id, _, timeline_bars)) = timeline_preset_bridge
+            .state
+            .lock()
+            .expect("state poisoned")
+            .group_display_settings_at(index as usize)
+        {
+            timeline_preset_bridge
+                .runtime
+                .request_set_group_timeline_bars(group_id, timeline_bars);
+        }
+        timeline_preset_bridge.refresh_ui();
     });
 
     let hide_bridge = bridge.clone();
@@ -735,6 +779,8 @@ fn apply_snapshot_to_main(main_window: &MainWindow, snapshot: &UiSnapshot) {
             pending: row.pending,
             unread_count: row.unread_count,
             sort_label: SharedString::from(row.sort_label.as_str()),
+            timeline_bars: row.timeline_bars,
+            sort_recent: row.sort_recent,
             timeline_visible: row.timeline_visible,
             timeline_ratio: row.timeline_ratio,
             timeline_positive: row.timeline_positive,

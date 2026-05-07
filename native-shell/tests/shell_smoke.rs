@@ -26,6 +26,7 @@ fn builds_app_state_from_seeded_runtime_snapshot() {
                 periods: vec!["60".into(), "15".into()],
                 signal_types: vec!["divMacd".into(), "divRsi".into()],
                 enabled: true,
+                ..WatchGroup::default()
             },
             WatchGroup {
                 id: "disabled".into(),
@@ -34,6 +35,7 @@ fn builds_app_state_from_seeded_runtime_snapshot() {
                 periods: vec!["5".into()],
                 signal_types: vec!["divMacd".into()],
                 enabled: false,
+                ..WatchGroup::default()
             },
         ],
         ..Default::default()

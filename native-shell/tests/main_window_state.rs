@@ -358,6 +358,7 @@ fn signal_rows_can_sort_by_recency_within_group_only() {
                 periods: vec!["60".into(), "15".into(), "5".into()],
                 signal_types: vec!["divMacd".into()],
                 enabled: true,
+                ..WatchGroup::default()
             },
             WatchGroup {
                 id: "group-eth".into(),
@@ -366,6 +367,7 @@ fn signal_rows_can_sort_by_recency_within_group_only() {
                 periods: vec!["60".into(), "15".into()],
                 signal_types: vec!["divMacd".into()],
                 enabled: true,
+                ..WatchGroup::default()
             },
         ],
         ..Default::default()
@@ -432,6 +434,7 @@ fn signal_row_sort_is_configured_per_section() {
                 periods: vec!["60".into(), "15".into(), "5".into()],
                 signal_types: vec!["divMacd".into()],
                 enabled: true,
+                ..WatchGroup::default()
             },
             WatchGroup {
                 id: "group-eth".into(),
@@ -440,6 +443,7 @@ fn signal_row_sort_is_configured_per_section() {
                 periods: vec!["60".into(), "15".into(), "5".into()],
                 signal_types: vec!["divMacd".into()],
                 enabled: true,
+                ..WatchGroup::default()
             },
         ],
         ..Default::default()
@@ -471,14 +475,14 @@ fn signal_row_sort_is_configured_per_section() {
     let mut state = AppState::new(runtime_snapshot);
     let before = state.snapshot();
 
-    assert_eq!(before.signal_rows[0].sort_label, "配置");
-    assert_eq!(before.signal_rows[4].sort_label, "配置");
+    assert_eq!(before.signal_rows[0].sort_label, "配·60 ▾");
+    assert_eq!(before.signal_rows[4].sort_label, "配·60 ▾");
 
     state.toggle_signal_row_sort_mode_at(0);
 
     let after = state.snapshot();
-    assert_eq!(after.signal_rows[0].sort_label, "最近");
-    assert_eq!(after.signal_rows[4].sort_label, "配置");
+    assert_eq!(after.signal_rows[0].sort_label, "近·60 ▾");
+    assert_eq!(after.signal_rows[4].sort_label, "配·60 ▾");
     assert_eq!(
         visible_row_titles(&after),
         vec!["BTCUSDT", "5", "15", "60", "ETHUSDT", "60", "15", "5"]

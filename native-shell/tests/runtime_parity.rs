@@ -54,6 +54,7 @@ fn save_config_to_path_persists_current_runtime_settings() {
             periods: vec!["60".into()],
             signal_types: vec!["divMacd".into()],
             enabled: true,
+            ..WatchGroup::default()
         }],
         ..Default::default()
     };

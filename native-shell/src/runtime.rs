@@ -64,6 +64,19 @@ impl Default for UiConfig {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WatchGroupRowSortMode {
+    ConfigOrder,
+    RecentFirst,
+}
+
+impl Default for WatchGroupRowSortMode {
+    fn default() -> Self {
+        Self::ConfigOrder
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct WatchGroup {
@@ -72,6 +85,8 @@ pub struct WatchGroup {
     pub symbol: String,
     pub periods: Vec<String>,
     pub signal_types: Vec<String>,
+    pub row_sort_mode: WatchGroupRowSortMode,
+    pub timeline_bars: i64,
     pub enabled: bool,
 }
 
@@ -83,6 +98,8 @@ impl Default for WatchGroup {
             symbol: "BTCUSDT".into(),
             periods: vec!["60".into(), "15".into(), "5".into(), "1".into()],
             signal_types: vec!["divMacd".into()],
+            row_sort_mode: WatchGroupRowSortMode::ConfigOrder,
+            timeline_bars: 60,
             enabled: true,
         }
     }
@@ -200,6 +217,14 @@ pub enum RuntimeCommand {
     SetEdgeWidth(f64),
     SetNotifications(bool),
     SetSound(bool),
+    SetGroupRowSortMode {
+        group_id: String,
+        sort_mode: WatchGroupRowSortMode,
+    },
+    SetGroupTimelineBars {
+        group_id: String,
+        timeline_bars: i64,
+    },
     SaveConfig,
     Quit,
 }
@@ -246,6 +271,24 @@ impl RuntimeHandles {
         let _ = self.command_tx.send(RuntimeCommand::SetSound(enabled));
     }
 
+    pub fn request_set_group_row_sort_mode(
+        &self,
+        group_id: String,
+        sort_mode: WatchGroupRowSortMode,
+    ) {
+        let _ = self.command_tx.send(RuntimeCommand::SetGroupRowSortMode {
+            group_id,
+            sort_mode,
+        });
+    }
+
+    pub fn request_set_group_timeline_bars(&self, group_id: String, timeline_bars: i64) {
+        let _ = self.command_tx.send(RuntimeCommand::SetGroupTimelineBars {
+            group_id,
+            timeline_bars,
+        });
+    }
+
     pub fn request_save_config(&self) {
         let _ = self.command_tx.send(RuntimeCommand::SaveConfig);
     }
@@ -253,6 +296,8 @@ impl RuntimeHandles {
 
 impl RuntimeStore {
     fn new(config: AppConfig) -> Self {
+        let mut config = config;
+        sanitize_watch_groups(&mut config.groups);
         let mut store = Self {
             always_on_top: config.ui.always_on_top,
             edge_mode: config.ui.edge_mode,
@@ -322,6 +367,7 @@ impl RuntimeStore {
         let mut config = self.config.clone();
         config.ui.always_on_top = self.always_on_top;
         config.ui.edge_mode = self.edge_mode;
+        sanitize_watch_groups(&mut config.groups);
         config
     }
 }
@@ -385,6 +431,40 @@ impl RuntimeModel {
 
     pub fn set_sound(&mut self, enabled: bool) -> RuntimeSnapshot {
         self.store.config.ui.sound = enabled;
+        self.store.snapshot()
+    }
+
+    pub fn set_group_row_sort_mode(
+        &mut self,
+        group_id: &str,
+        sort_mode: WatchGroupRowSortMode,
+    ) -> RuntimeSnapshot {
+        if let Some(group) = self
+            .store
+            .config
+            .groups
+            .iter_mut()
+            .find(|group| group.id == group_id)
+        {
+            group.row_sort_mode = sort_mode;
+        }
+        self.store.snapshot()
+    }
+
+    pub fn set_group_timeline_bars(
+        &mut self,
+        group_id: &str,
+        timeline_bars: i64,
+    ) -> RuntimeSnapshot {
+        if let Some(group) = self
+            .store
+            .config
+            .groups
+            .iter_mut()
+            .find(|group| group.id == group_id)
+        {
+            group.timeline_bars = clamp_timeline_bars(timeline_bars);
+        }
         self.store.snapshot()
     }
 
@@ -459,6 +539,18 @@ where
                 }
                 Ok(RuntimeCommand::SetSound(enabled)) => {
                     on_snapshot(runtime.set_sound(enabled));
+                }
+                Ok(RuntimeCommand::SetGroupRowSortMode {
+                    group_id,
+                    sort_mode,
+                }) => {
+                    on_snapshot(runtime.set_group_row_sort_mode(&group_id, sort_mode));
+                }
+                Ok(RuntimeCommand::SetGroupTimelineBars {
+                    group_id,
+                    timeline_bars,
+                }) => {
+                    on_snapshot(runtime.set_group_timeline_bars(&group_id, timeline_bars));
                 }
                 Ok(RuntimeCommand::SaveConfig) => match runtime.save_config() {
                     Ok(snapshot) => on_snapshot(snapshot),
@@ -691,6 +783,16 @@ fn mark_signal_read_remote(
 
 pub fn config_location_hint() -> String {
     config::config_location_hint()
+}
+
+pub fn clamp_timeline_bars(value: i64) -> i64 {
+    value.clamp(10, 240)
+}
+
+fn sanitize_watch_groups(groups: &mut [WatchGroup]) {
+    for group in groups {
+        group.timeline_bars = clamp_timeline_bars(group.timeline_bars);
+    }
 }
 
 #[cfg(test)]
