@@ -571,15 +571,21 @@ fn timeline_marker_ratio(signal: &RuntimeSignal, now_ms: i64, cell_count: i64) -
 }
 
 fn period_to_ms(period: &str) -> Option<i64> {
-    match period {
+    let normalized = period.trim().to_ascii_uppercase();
+    match normalized.as_str() {
         "W" => Some(7 * 24 * 60 * 60 * 1000),
         "D" => Some(24 * 60 * 60 * 1000),
-        _ if period.ends_with('D') => period
+        _ if normalized.ends_with('D') => normalized
             .trim_end_matches('D')
             .parse::<i64>()
             .ok()
             .map(|days| days * 24 * 60 * 60 * 1000),
-        _ => period
+        _ if normalized.ends_with('S') => normalized
+            .trim_end_matches('S')
+            .parse::<i64>()
+            .ok()
+            .map(|seconds| seconds * 1000),
+        _ => normalized
             .parse::<i64>()
             .ok()
             .map(|minutes| minutes * 60 * 1000),
@@ -666,7 +672,7 @@ fn compare_signal_recency(
 
 #[cfg(test)]
 mod tests {
-    use super::format_timestamp;
+    use super::{format_timestamp, period_to_ms};
     use chrono::{Local, TimeZone};
 
     #[test]
@@ -680,5 +686,12 @@ mod tests {
             .to_string();
 
         assert_eq!(format_timestamp(timestamp_ms), expected);
+    }
+
+    #[test]
+    fn period_to_ms_supports_second_periods() {
+        assert_eq!(period_to_ms("45S"), Some(45_000));
+        assert_eq!(period_to_ms("30s"), Some(30_000));
+        assert_eq!(period_to_ms(" 15S "), Some(15_000));
     }
 }

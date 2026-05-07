@@ -87,10 +87,15 @@ fn signal_key(signal: &RuntimeSignal) -> (String, String, String) {
 
 fn alert_level_for_period(period: &str) -> AlertLevel {
     let normalized = period.trim().to_ascii_uppercase();
-    if normalized.ends_with('W')
-        || normalized.ends_with('D')
-        || normalized.ends_with('M')
+    if normalized
+        .strip_suffix('S')
+        .and_then(|seconds| seconds.parse::<u64>().ok())
+        .is_some()
     {
+        return AlertLevel::Normal;
+    }
+
+    if normalized.ends_with('W') || normalized.ends_with('D') || normalized.ends_with('M') {
         return AlertLevel::Critical;
     }
 
@@ -374,6 +379,8 @@ mod tests {
 
     #[test]
     fn alert_levels_follow_period_size() {
+        assert_eq!(alert_level_for_period("15S"), AlertLevel::Normal);
+        assert_eq!(alert_level_for_period("30s"), AlertLevel::Normal);
         assert_eq!(alert_level_for_period("5"), AlertLevel::Normal);
         assert_eq!(alert_level_for_period("60"), AlertLevel::High);
         assert_eq!(alert_level_for_period("10D"), AlertLevel::Critical);
