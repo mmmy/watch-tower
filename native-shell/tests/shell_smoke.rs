@@ -25,6 +25,7 @@ fn builds_app_state_from_seeded_runtime_snapshot() {
                 symbol: "BTCUSDT".into(),
                 periods: vec!["60".into(), "15".into()],
                 signal_types: vec!["divMacd".into(), "divRsi".into()],
+                active_levels_only: false,
                 enabled: true,
                 ..WatchGroup::default()
             },

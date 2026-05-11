@@ -101,7 +101,7 @@ impl Default for WatchGroup {
             signal_types: vec!["divMacd".into()],
             row_sort_mode: WatchGroupRowSortMode::ConfigOrder,
             timeline_bars: 60,
-            active_levels_only: false,
+            active_levels_only: true,
             enabled: true,
         }
     }

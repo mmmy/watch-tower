@@ -218,7 +218,7 @@ fn signal_rows_expose_timeline_direction_for_short_signals() {
 }
 
 #[test]
-fn signal_rows_show_all_levels_by_default_even_without_timeline_marker() {
+fn signal_rows_filter_inactive_levels_by_default() {
     let mut runtime_snapshot = runtime_snapshot_from_config(AppConfig {
         groups: vec![WatchGroup {
             periods: vec!["60".into(), "15".into(), "5".into()],
@@ -242,13 +242,10 @@ fn signal_rows_show_all_levels_by_default_even_without_timeline_marker() {
 
     let snapshot = AppState::new(runtime_snapshot).snapshot();
 
-    assert_eq!(
-        visible_row_titles(&snapshot),
-        vec!["BTCUSDT", "60", "15", "5"]
-    );
-    assert_eq!(snapshot.signal_rows[0].visible_level_count, 3);
+    assert_eq!(visible_row_titles(&snapshot), vec!["BTCUSDT", "60"]);
+    assert_eq!(snapshot.signal_rows[0].visible_level_count, 1);
     assert_eq!(snapshot.signal_rows[0].total_level_count, 3);
-    assert!(!snapshot.signal_rows[0].active_levels_only);
+    assert!(snapshot.signal_rows[0].active_levels_only);
 }
 
 #[test]
@@ -291,6 +288,7 @@ fn signal_rows_follow_configured_period_order() {
     let config = AppConfig {
         groups: vec![WatchGroup {
             periods: vec!["10D".into(), "W".into(), "60".into(), "15".into(), "1".into()],
+            active_levels_only: false,
             ..WatchGroup::default()
         }],
         ..Default::default()
