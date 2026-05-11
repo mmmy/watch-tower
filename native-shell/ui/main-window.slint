@@ -13,6 +13,9 @@ export struct SignalRowData {
     timeline_visible: bool,
     timeline_ratio: float,
     timeline_positive: bool,
+    active_levels_only: bool,
+    visible_level_count: int,
+    total_level_count: int,
 }
 
 export struct UnreadItemData {
@@ -260,6 +263,7 @@ export component MainWindow inherits Window {
     callback toggle-signal-sort-mode(int);
     callback adjust-signal-timeline-bars(int, int);
     callback set-signal-timeline-bars(int, int);
+    callback toggle-signal-active-levels-only(int);
     callback toggle-signal-read(int);
     callback unread-hover-started();
     callback unread-hover-ended();
@@ -692,7 +696,7 @@ export component MainWindow inherits Window {
                                 x: parent.width - self.width - 6px;
                                 y: 22px;
                                 width: 144px;
-                                height: 122px;
+                                height: 154px;
                                 close-policy: close-on-click-outside;
 
                                 Rectangle {
@@ -833,6 +837,28 @@ export component MainWindow inherits Window {
                                             root.set-signal-timeline-bars(index, 120);
                                             settings-popup.close();
                                         }
+                                    }
+
+                                    PlainCheckBox {
+                                        x: 8px;
+                                        y: 118px;
+                                        width: parent.width - 16px;
+                                        text: "仅显示活跃级别";
+                                        checked: signal-row.active_levels_only;
+                                        toggled => {
+                                            root.toggle-signal-active-levels-only(index);
+                                        }
+                                    }
+
+                                    Text {
+                                        x: 23px;
+                                        y: 137px;
+                                        width: parent.width - 31px;
+                                        text: "显示 " + signal-row.visible_level_count
+                                            + " / " + signal-row.total_level_count;
+                                        color: #707070;
+                                        font-size: 9px;
+                                        overflow: elide;
                                     }
                                 }
                             }

@@ -408,7 +408,7 @@ fn wire_main_window(
             state.toggle_signal_row_sort_mode_at(index as usize);
             state.group_display_settings_at(index as usize)
         };
-        if let Some((group_id, sort_mode, _)) = settings {
+        if let Some((group_id, sort_mode, _, _)) = settings {
             sort_bridge
                 .runtime
                 .request_set_group_row_sort_mode(group_id, sort_mode);
@@ -422,7 +422,7 @@ fn wire_main_window(
             let mut state = timeline_step_bridge.state.lock().expect("state poisoned");
             state.adjust_signal_timeline_bars_at(index as usize, delta as i64);
         }
-        if let Some((group_id, _, timeline_bars)) = timeline_step_bridge
+        if let Some((group_id, _, timeline_bars, _)) = timeline_step_bridge
             .state
             .lock()
             .expect("state poisoned")
@@ -441,7 +441,7 @@ fn wire_main_window(
             let mut state = timeline_preset_bridge.state.lock().expect("state poisoned");
             state.set_signal_timeline_bars_at(index as usize, timeline_bars as i64);
         }
-        if let Some((group_id, _, timeline_bars)) = timeline_preset_bridge
+        if let Some((group_id, _, timeline_bars, _)) = timeline_preset_bridge
             .state
             .lock()
             .expect("state poisoned")
@@ -452,6 +452,25 @@ fn wire_main_window(
                 .request_set_group_timeline_bars(group_id, timeline_bars);
         }
         timeline_preset_bridge.refresh_ui();
+    });
+
+    let active_filter_bridge = bridge.clone();
+    main_window.on_toggle_signal_active_levels_only(move |index| {
+        {
+            let mut state = active_filter_bridge.state.lock().expect("state poisoned");
+            state.toggle_signal_active_levels_only_at(index as usize);
+        }
+        if let Some((group_id, _, _, active_levels_only)) = active_filter_bridge
+            .state
+            .lock()
+            .expect("state poisoned")
+            .group_display_settings_at(index as usize)
+        {
+            active_filter_bridge
+                .runtime
+                .request_set_group_active_levels_only(group_id, active_levels_only);
+        }
+        active_filter_bridge.refresh_ui();
     });
 
     let hide_bridge = bridge.clone();
@@ -784,6 +803,9 @@ fn apply_snapshot_to_main(main_window: &MainWindow, snapshot: &UiSnapshot) {
             timeline_visible: row.timeline_visible,
             timeline_ratio: row.timeline_ratio,
             timeline_positive: row.timeline_positive,
+            active_levels_only: row.active_levels_only,
+            visible_level_count: row.visible_level_count,
+            total_level_count: row.total_level_count,
         })
         .collect();
     let unread_items: Vec<UnreadItemData> = snapshot

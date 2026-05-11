@@ -87,6 +87,7 @@ pub struct WatchGroup {
     pub signal_types: Vec<String>,
     pub row_sort_mode: WatchGroupRowSortMode,
     pub timeline_bars: i64,
+    pub active_levels_only: bool,
     pub enabled: bool,
 }
 
@@ -100,6 +101,7 @@ impl Default for WatchGroup {
             signal_types: vec!["divMacd".into()],
             row_sort_mode: WatchGroupRowSortMode::ConfigOrder,
             timeline_bars: 60,
+            active_levels_only: false,
             enabled: true,
         }
     }
@@ -225,6 +227,10 @@ pub enum RuntimeCommand {
         group_id: String,
         timeline_bars: i64,
     },
+    SetGroupActiveLevelsOnly {
+        group_id: String,
+        active_levels_only: bool,
+    },
     SaveConfig,
     Quit,
 }
@@ -287,6 +293,15 @@ impl RuntimeHandles {
             group_id,
             timeline_bars,
         });
+    }
+
+    pub fn request_set_group_active_levels_only(&self, group_id: String, active_levels_only: bool) {
+        let _ = self
+            .command_tx
+            .send(RuntimeCommand::SetGroupActiveLevelsOnly {
+                group_id,
+                active_levels_only,
+            });
     }
 
     pub fn request_save_config(&self) {
@@ -468,6 +483,23 @@ impl RuntimeModel {
         self.store.snapshot()
     }
 
+    pub fn set_group_active_levels_only(
+        &mut self,
+        group_id: &str,
+        active_levels_only: bool,
+    ) -> RuntimeSnapshot {
+        if let Some(group) = self
+            .store
+            .config
+            .groups
+            .iter_mut()
+            .find(|group| group.id == group_id)
+        {
+            group.active_levels_only = active_levels_only;
+        }
+        self.store.snapshot()
+    }
+
     pub fn save_config(&mut self) -> Result<RuntimeSnapshot, String> {
         let path = config::resolve_config_path_for_write();
         self.save_config_to_path(&path)
@@ -551,6 +583,14 @@ where
                     timeline_bars,
                 }) => {
                     on_snapshot(runtime.set_group_timeline_bars(&group_id, timeline_bars));
+                }
+                Ok(RuntimeCommand::SetGroupActiveLevelsOnly {
+                    group_id,
+                    active_levels_only,
+                }) => {
+                    on_snapshot(
+                        runtime.set_group_active_levels_only(&group_id, active_levels_only),
+                    );
                 }
                 Ok(RuntimeCommand::SaveConfig) => match runtime.save_config() {
                     Ok(snapshot) => on_snapshot(snapshot),

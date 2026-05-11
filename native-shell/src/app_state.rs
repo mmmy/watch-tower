@@ -43,6 +43,9 @@ pub struct UiSignalRow {
     pub timeline_visible: bool,
     pub timeline_ratio: f32,
     pub timeline_positive: bool,
+    pub active_levels_only: bool,
+    pub visible_level_count: i32,
+    pub total_level_count: i32,
 }
 
 #[derive(Clone, Debug)]
@@ -283,10 +286,30 @@ impl AppState {
         }
     }
 
+    pub fn toggle_signal_active_levels_only_at(&mut self, index: usize) {
+        let Some(section_key) = self
+            .build_signal_row_views()
+            .get(index)
+            .and_then(|entry| entry.section_key.clone())
+        else {
+            return;
+        };
+
+        if let Some(group) = self
+            .runtime_snapshot
+            .config
+            .groups
+            .iter_mut()
+            .find(|group| group.id == section_key.group_id)
+        {
+            group.active_levels_only = !group.active_levels_only;
+        }
+    }
+
     pub fn group_display_settings_at(
         &self,
         index: usize,
-    ) -> Option<(String, WatchGroupRowSortMode, i64)> {
+    ) -> Option<(String, WatchGroupRowSortMode, i64, bool)> {
         let section_key = self
             .build_signal_row_views()
             .get(index)
@@ -302,6 +325,7 @@ impl AppState {
             group.id.clone(),
             group.row_sort_mode,
             clamp_timeline_bars(group.timeline_bars),
+            group.active_levels_only,
         ))
     }
 
@@ -387,51 +411,80 @@ impl AppState {
                     group_id: group.id.clone(),
                     signal_type: signal_type.clone(),
                 };
-                let mut signals = signals
-                    .into_iter()
-                    .enumerate()
-                    .collect::<Vec<_>>();
-
+                let section_title = signals
+                    .first()
+                    .map(|signal| signal.symbol.clone())
+                    .unwrap_or_else(|| group.symbol.clone());
+                let total_level_count = signals.len() as i32;
+                let all_unread = signals.iter().any(|signal| signal.unread);
+                let all_unread_count = signals.iter().filter(|signal| signal.unread).count() as i32;
+                let all_pending = signals.iter().any(|signal| {
+                    self.pending_mark_read
+                        .iter()
+                        .any(|pending| pending == &signal_to_key(signal))
+                });
+                let active_levels_only = group.active_levels_only;
                 let sort_mode = self.sort_mode_for_section(&section_key);
                 let timeline_bars = self.timeline_bars_for_section(&section_key);
 
+                let mut signals = signals
+                    .into_iter()
+                    .enumerate()
+                    .map(|(index, signal)| {
+                        let key = signal_to_key(&signal);
+                        let pending = self.pending_mark_read.iter().any(|pending| pending == &key);
+                        let timeline_ratio = timeline_marker_ratio(&signal, now_ms, timeline_bars);
+                        let show_when_filtered =
+                            timeline_ratio.is_some() || signal.unread || pending;
+                        (
+                            index,
+                            signal,
+                            key,
+                            pending,
+                            timeline_ratio,
+                            show_when_filtered,
+                        )
+                    })
+                    .collect::<Vec<_>>();
+
                 if matches!(sort_mode, WatchGroupRowSortMode::RecentFirst) {
-                    signals.sort_by(|(left_index, left_signal), (right_index, right_signal)| {
-                        compare_signal_recency(left_signal, right_signal, now_ms, timeline_bars)
-                            .then_with(|| left_index.cmp(right_index))
-                    });
+                    signals.sort_by(
+                        |(left_index, left_signal, ..), (right_index, right_signal, ..)| {
+                            compare_signal_recency(left_signal, right_signal, now_ms, timeline_bars)
+                                .then_with(|| left_index.cmp(right_index))
+                        },
+                    );
                 }
+
+                if active_levels_only {
+                    signals.retain(|(_, _, _, _, _, show_when_filtered)| *show_when_filtered);
+                }
+
+                let visible_level_count = signals.len() as i32;
 
                 rows.push(SignalRowView {
                     row: UiSignalRow {
-                        title: signals
-                            .first()
-                            .map(|(_, signal)| signal.symbol.clone())
-                            .unwrap_or_default(),
+                        title: section_title,
                         meta: format!("{}  {}", group.name, signal_type),
                         is_header: true,
-                        unread: signals.iter().any(|(_, signal)| signal.unread),
-                        pending: signals.iter().any(|(_, signal)| {
-                            self.pending_mark_read
-                                .iter()
-                                .any(|pending| pending == &signal_to_key(signal))
-                        }),
-                        unread_count: signals
-                            .iter()
-                            .filter(|(_, signal)| signal.unread)
-                            .count() as i32,
+                        unread: all_unread,
+                        pending: all_pending,
+                        unread_count: all_unread_count,
                         sort_label: format!("{}·{} ▾", sort_mode.short_label(), timeline_bars),
                         timeline_bars: timeline_bars as i32,
                         sort_recent: matches!(sort_mode, WatchGroupRowSortMode::RecentFirst),
                         timeline_visible: false,
                         timeline_ratio: 0.0,
                         timeline_positive: true,
+                        active_levels_only,
+                        visible_level_count,
+                        total_level_count,
                     },
                     action: {
                         let unread_keys = signals
                             .iter()
-                            .filter(|(_, signal)| signal.unread)
-                            .map(|(_, signal)| signal_to_key(signal))
+                            .filter(|(_, signal, ..)| signal.unread)
+                            .map(|(_, _, key, ..)| key.clone())
                             .collect::<Vec<_>>();
                         if unread_keys.is_empty() {
                             None
@@ -443,10 +496,8 @@ impl AppState {
                     section_key: Some(section_key),
                 });
 
-                for (_, signal) in signals {
-                    let key = signal_to_key(&signal);
+                for (_, signal, key, pending, timeline_ratio, _) in signals {
                     let side = if signal.side >= 0 { "多" } else { "空" };
-                    let timeline_ratio = timeline_marker_ratio(&signal, now_ms, timeline_bars);
                     let row_index = rows.len() as i32;
 
                     rows.push(SignalRowView {
@@ -455,7 +506,7 @@ impl AppState {
                             meta: format!("{} · {}", side, format_timestamp(signal.trigger_time)),
                             is_header: false,
                             unread: signal.unread,
-                            pending: self.pending_mark_read.iter().any(|pending| pending == &key),
+                            pending,
                             unread_count: 0,
                             sort_label: String::new(),
                             timeline_bars: 0,
@@ -463,6 +514,9 @@ impl AppState {
                             timeline_visible: timeline_ratio.is_some(),
                             timeline_ratio: timeline_ratio.unwrap_or(0.0),
                             timeline_positive: signal.side >= 0,
+                            active_levels_only: false,
+                            visible_level_count: 0,
+                            total_level_count: 0,
                         },
                         action: Some(RowAction::Single {
                             key,

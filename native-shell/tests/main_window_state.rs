@@ -218,6 +218,75 @@ fn signal_rows_expose_timeline_direction_for_short_signals() {
 }
 
 #[test]
+fn signal_rows_show_all_levels_by_default_even_without_timeline_marker() {
+    let mut runtime_snapshot = runtime_snapshot_from_config(AppConfig {
+        groups: vec![WatchGroup {
+            periods: vec!["60".into(), "15".into(), "5".into()],
+            timeline_bars: 10,
+            ..WatchGroup::default()
+        }],
+        ..Default::default()
+    });
+
+    let now_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as i64;
+
+    runtime_snapshot.signals[0].period = "60".into();
+    runtime_snapshot.signals[0].trigger_time = now_ms - 2 * 60 * 60 * 1000;
+    runtime_snapshot.signals[1].period = "15".into();
+    runtime_snapshot.signals[1].trigger_time = 0;
+    runtime_snapshot.signals[2].period = "5".into();
+    runtime_snapshot.signals[2].trigger_time = now_ms - 20 * 5 * 60 * 1000;
+
+    let snapshot = AppState::new(runtime_snapshot).snapshot();
+
+    assert_eq!(
+        visible_row_titles(&snapshot),
+        vec!["BTCUSDT", "60", "15", "5"]
+    );
+    assert_eq!(snapshot.signal_rows[0].visible_level_count, 3);
+    assert_eq!(snapshot.signal_rows[0].total_level_count, 3);
+    assert!(!snapshot.signal_rows[0].active_levels_only);
+}
+
+#[test]
+fn signal_rows_active_filter_hides_empty_levels_but_keeps_unread_levels() {
+    let mut runtime_snapshot = runtime_snapshot_from_config(AppConfig {
+        groups: vec![WatchGroup {
+            periods: vec!["60".into(), "15".into(), "5".into(), "1".into()],
+            timeline_bars: 10,
+            active_levels_only: true,
+            ..WatchGroup::default()
+        }],
+        ..Default::default()
+    });
+
+    let now_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as i64;
+
+    runtime_snapshot.signals[0].period = "60".into();
+    runtime_snapshot.signals[0].trigger_time = now_ms - 2 * 60 * 60 * 1000;
+    runtime_snapshot.signals[1].period = "15".into();
+    runtime_snapshot.signals[1].trigger_time = 0;
+    runtime_snapshot.signals[2].period = "5".into();
+    runtime_snapshot.signals[2].trigger_time = now_ms - 20 * 5 * 60 * 1000;
+    runtime_snapshot.signals[3].period = "1".into();
+    runtime_snapshot.signals[3].trigger_time = now_ms - 20 * 60 * 1000;
+    runtime_snapshot.signals[3].unread = true;
+
+    let snapshot = AppState::new(runtime_snapshot).snapshot();
+
+    assert_eq!(visible_row_titles(&snapshot), vec!["BTCUSDT", "60", "1"]);
+    assert_eq!(snapshot.signal_rows[0].visible_level_count, 2);
+    assert_eq!(snapshot.signal_rows[0].total_level_count, 4);
+    assert!(snapshot.signal_rows[0].active_levels_only);
+}
+
+#[test]
 fn signal_rows_follow_configured_period_order() {
     let config = AppConfig {
         groups: vec![WatchGroup {
