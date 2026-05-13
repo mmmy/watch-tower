@@ -169,6 +169,29 @@ struct ReadStatusRequest {
     read: bool,
 }
 
+#[derive(Debug, Serialize)]
+struct ReadStatusBatchRequest {
+    items: Vec<ReadStatusRequest>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ReadStatusBatchResponse {
+    #[serde(default)]
+    results: Vec<ReadStatusBatchResult>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ReadStatusBatchResult {
+    symbol: String,
+    #[serde(deserialize_with = "deserialize_stringish")]
+    period: String,
+    #[serde(rename = "signalType")]
+    signal_type: String,
+    read: bool,
+    #[serde(default)]
+    success: bool,
+}
+
 #[derive(Debug, Deserialize)]
 struct SignalListResponse {
     #[serde(default)]
@@ -214,6 +237,10 @@ pub enum RuntimeCommand {
         input: SignalMutationInput,
         read: bool,
     },
+    MarkSignalsRead {
+        inputs: Vec<SignalMutationInput>,
+        read: bool,
+    },
     SetAlwaysOnTop(bool),
     SetEdgeMode(bool),
     SetEdgeWidth(f64),
@@ -253,6 +280,12 @@ impl RuntimeHandles {
         let _ = self
             .command_tx
             .send(RuntimeCommand::MarkSignalRead { input, read });
+    }
+
+    pub fn request_mark_read_batch(&self, inputs: Vec<SignalMutationInput>, read: bool) {
+        let _ = self
+            .command_tx
+            .send(RuntimeCommand::MarkSignalsRead { inputs, read });
     }
 
     pub fn request_set_always_on_top(&self, pinned: bool) {
@@ -422,6 +455,14 @@ impl RuntimeModel {
         mark_signal_read_remote(&mut self.store, input, read)
     }
 
+    pub fn mark_signals_read_batch_remote(
+        &mut self,
+        inputs: &[SignalMutationInput],
+        read: bool,
+    ) -> Result<RuntimeSnapshot, String> {
+        mark_signals_read_batch_remote(&mut self.store, inputs, read)
+    }
+
     pub fn set_always_on_top(&mut self, pinned: bool) -> RuntimeSnapshot {
         self.store.always_on_top = pinned;
         self.store.config.ui.always_on_top = pinned;
@@ -557,6 +598,12 @@ where
                         Err(error) => on_error(error, runtime.mark_last_connection_failed()),
                     }
                 }
+                Ok(RuntimeCommand::MarkSignalsRead { inputs, read }) => {
+                    match runtime.mark_signals_read_batch_remote(&inputs, read) {
+                        Ok(snapshot) => on_snapshot(snapshot),
+                        Err(error) => on_error(error, runtime.mark_last_connection_failed()),
+                    }
+                }
                 Ok(RuntimeCommand::SetAlwaysOnTop(pinned)) => {
                     on_snapshot(runtime.set_always_on_top(pinned));
                 }
@@ -680,34 +727,6 @@ fn post_json<TReq: Serialize, TRes: for<'de> Deserialize<'de>>(
     response.json::<TRes>().map_err(|err| err.to_string())
 }
 
-fn post_json_unit<TReq: Serialize>(
-    client: &Client,
-    config: &AppConfig,
-    path: &str,
-    body: &TReq,
-) -> Result<(), String> {
-    let url = format!(
-        "{}/{}",
-        config.api.base_url.trim_end_matches('/'),
-        path.trim_start_matches('/')
-    );
-
-    let response = client
-        .post(url)
-        .header("x-api-key", &config.api.api_key)
-        .json(body)
-        .send()
-        .map_err(|err| err.to_string())?;
-
-    let status = response.status();
-    if !status.is_success() {
-        let body = response.text().unwrap_or_default();
-        return Err(format!("request failed: {} {}", status, body));
-    }
-
-    Ok(())
-}
-
 fn fetch_runtime_signals(config: &AppConfig) -> Result<Vec<RuntimeSignal>, String> {
     let client = Client::builder()
         .use_rustls_tls()
@@ -783,39 +802,78 @@ fn mark_signal_read_remote(
     input: &SignalMutationInput,
     read: bool,
 ) -> Result<RuntimeSnapshot, String> {
-    let signal = store
-        .signals
-        .iter()
-        .find(|signal| {
-            !signal.deleted
-                && signal.group_id == input.group_id
-                && signal.signal_type == input.signal_type
-                && signal.period == input.period
-        })
-        .cloned()
-        .ok_or_else(|| "signal not found".to_string())?;
+    mark_signals_read_batch_remote(store, std::slice::from_ref(input), read)
+}
+
+fn mark_signals_read_batch_remote(
+    store: &mut RuntimeStore,
+    inputs: &[SignalMutationInput],
+    read: bool,
+) -> Result<RuntimeSnapshot, String> {
+    let mut items = Vec::new();
+    let mut requested = Vec::new();
+
+    for input in inputs {
+        let signal = store
+            .signals
+            .iter()
+            .find(|signal| {
+                !signal.deleted
+                    && signal.group_id == input.group_id
+                    && signal.signal_type == input.signal_type
+                    && signal.period == input.period
+            })
+            .cloned()
+            .ok_or_else(|| "signal not found".to_string())?;
+
+        items.push(ReadStatusRequest {
+            symbol: signal.symbol,
+            period: input.period.clone(),
+            signal_type: input.signal_type.clone(),
+            read,
+        });
+        requested.push(input.clone());
+    }
+
+    if items.is_empty() {
+        return Ok(store.snapshot());
+    }
 
     let client = Client::builder()
         .use_rustls_tls()
         .build()
         .map_err(|err| err.to_string())?;
 
-    let request = ReadStatusRequest {
-        symbol: signal.symbol,
-        period: input.period.clone(),
-        signal_type: input.signal_type.clone(),
-        read,
-    };
-
-    post_json_unit(
+    let response: ReadStatusBatchResponse = post_json(
         &client,
         &store.config,
-        "/api/open/watch-list/symbol-alert/read-status",
-        &request,
+        "/api/open/watch-list/symbol-alert/read-status/batch",
+        &ReadStatusBatchRequest { items },
     )?;
 
-    if !store.mark_signal_read(input, read) {
-        return Err("signal not found".to_string());
+    let applied_inputs = response
+        .results
+        .iter()
+        .filter(|result| result.success)
+        .flat_map(|result| {
+            requested.iter().filter(|input| {
+                input.period == result.period
+                    && input.signal_type == result.signal_type
+                    && result.read == read
+                    && store.signals.iter().any(|signal| {
+                        !signal.deleted
+                            && signal.group_id == input.group_id
+                            && signal.period == input.period
+                            && signal.signal_type == input.signal_type
+                            && signal.symbol == result.symbol
+                    })
+            })
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+
+    for input in &applied_inputs {
+        store.mark_signal_read(input, read);
     }
 
     Ok(store.snapshot())
@@ -846,7 +904,11 @@ fn sanitize_watch_groups(groups: &mut [WatchGroup]) {
 
 #[cfg(test)]
 mod tests {
-    use super::{AppConfig, RuntimeStore, WatchGroup};
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+    use std::thread;
+
+    use super::{ApiConfig, AppConfig, RuntimeStore, WatchGroup};
 
     #[test]
     fn apply_remote_signals_can_refresh_without_advancing_tick() {
@@ -878,5 +940,138 @@ mod tests {
 
         assert_eq!(store.last_tick, 1);
         assert_eq!(store.signals[0].trigger_time, 456);
+    }
+
+    #[test]
+    fn mark_signals_read_batch_remote_posts_batch_and_applies_successful_results() {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind test server");
+        let base_url = format!("http://{}", listener.local_addr().expect("local addr"));
+        let server = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().expect("accept request");
+            let mut buffer = [0_u8; 8192];
+            let bytes_read = stream.read(&mut buffer).expect("read request");
+            let request = String::from_utf8_lossy(&buffer[..bytes_read]);
+
+            assert!(request.starts_with(
+                "POST /api/open/watch-list/symbol-alert/read-status/batch HTTP/1.1"
+            ));
+            assert!(request.contains("x-api-key: test-key"));
+            assert!(request.contains("\"items\":["));
+            assert!(request.contains(
+                "{\"symbol\":\"BTCUSDT\",\"period\":\"60\",\"signalType\":\"divMacd\",\"read\":true}"
+            ));
+            assert!(request.contains(
+                "{\"symbol\":\"BTCUSDT\",\"period\":\"15\",\"signalType\":\"divMacd\",\"read\":true}"
+            ));
+
+            let response_body = concat!(
+                "{\"success\":1,\"failed\":1,\"results\":[",
+                "{\"symbol\":\"BTCUSDT\",\"period\":\"60\",\"signalType\":\"divMacd\",\"read\":true,\"success\":true},",
+                "{\"symbol\":\"BTCUSDT\",\"period\":\"15\",\"signalType\":\"divMacd\",\"read\":true,\"success\":false,\"reason\":\"signal_not_found\"}",
+                "]}"
+            );
+            let response = format!(
+                "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\n\r\n{}",
+                response_body.len(),
+                response_body
+            );
+            stream
+                .write_all(response.as_bytes())
+                .expect("write response");
+        });
+
+        let config = AppConfig {
+            api: ApiConfig {
+                base_url,
+                api_key: "test-key".into(),
+            },
+            groups: vec![WatchGroup::default()],
+            ..Default::default()
+        };
+        let mut store = RuntimeStore::new(config);
+        store.signals[0].unread = true;
+        store.signals[1].unread = true;
+        store.recompute_unread();
+
+        let snapshot = super::mark_signals_read_batch_remote(
+            &mut store,
+            &[
+                super::SignalMutationInput {
+                    group_id: "group-1".into(),
+                    signal_type: "divMacd".into(),
+                    period: "60".into(),
+                },
+                super::SignalMutationInput {
+                    group_id: "group-1".into(),
+                    signal_type: "divMacd".into(),
+                    period: "15".into(),
+                },
+            ],
+            true,
+        )
+        .expect("batch mark read succeeds");
+
+        server.join().expect("server thread");
+        assert!(!snapshot.signals[0].unread);
+        assert!(snapshot.signals[1].unread);
+        assert_eq!(snapshot.unread_count, 1);
+    }
+
+    #[test]
+    fn mark_signal_read_remote_uses_batch_endpoint_for_single_item() {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind test server");
+        let base_url = format!("http://{}", listener.local_addr().expect("local addr"));
+        let server = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().expect("accept request");
+            let mut buffer = [0_u8; 8192];
+            let bytes_read = stream.read(&mut buffer).expect("read request");
+            let request = String::from_utf8_lossy(&buffer[..bytes_read]);
+
+            assert!(request.starts_with(
+                "POST /api/open/watch-list/symbol-alert/read-status/batch HTTP/1.1"
+            ));
+            assert!(request.contains(
+                "{\"symbol\":\"BTCUSDT\",\"period\":\"60\",\"signalType\":\"divMacd\",\"read\":false}"
+            ));
+
+            let response_body = concat!(
+                "{\"success\":1,\"failed\":0,\"results\":[",
+                "{\"symbol\":\"BTCUSDT\",\"period\":\"60\",\"signalType\":\"divMacd\",\"read\":false,\"success\":true}",
+                "]}"
+            );
+            let response = format!(
+                "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\n\r\n{}",
+                response_body.len(),
+                response_body
+            );
+            stream
+                .write_all(response.as_bytes())
+                .expect("write response");
+        });
+
+        let config = AppConfig {
+            api: ApiConfig {
+                base_url,
+                api_key: "test-key".into(),
+            },
+            groups: vec![WatchGroup::default()],
+            ..Default::default()
+        };
+        let mut store = RuntimeStore::new(config);
+
+        let snapshot = super::mark_signal_read_remote(
+            &mut store,
+            &super::SignalMutationInput {
+                group_id: "group-1".into(),
+                signal_type: "divMacd".into(),
+                period: "60".into(),
+            },
+            false,
+        )
+        .expect("single mark unread succeeds");
+
+        server.join().expect("server thread");
+        assert!(snapshot.signals[0].unread);
+        assert_eq!(snapshot.unread_count, 1);
     }
 }

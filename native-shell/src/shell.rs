@@ -203,6 +203,22 @@ impl UiBridge {
         }
     }
 
+    fn activate_signal_row_at(&self, index: i32) {
+        if index < 0 {
+            return;
+        }
+
+        let signal_keys = {
+            let mut state = self.state.lock().expect("state poisoned");
+            state.activate_row_at(index as usize)
+        };
+
+        if !signal_keys.is_empty() {
+            self.refresh_ui();
+            self.runtime.request_mark_read_batch(signal_keys, true);
+        }
+    }
+
     fn show_widget_menu(&self) {
         if let Some(widget_window) = self.widget_window.upgrade() {
             let always_on_top = {
@@ -526,6 +542,11 @@ fn wire_main_window(
     let toggle_signal_bridge = bridge.clone();
     main_window.on_toggle_signal_read(move |index| {
         toggle_signal_bridge.toggle_signal_read_at(index);
+    });
+
+    let activate_signal_bridge = bridge.clone();
+    main_window.on_activate_signal_row(move |index| {
+        activate_signal_bridge.activate_signal_row_at(index);
     });
 
     let unread_hover_timer = unread_hover_hide_timer.clone();

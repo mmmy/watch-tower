@@ -266,6 +266,7 @@ export component MainWindow inherits Window {
     callback apply-signal-timeline-bars-input(int, string);
     callback toggle-signal-active-levels-only(int);
     callback toggle-signal-read(int);
+    callback activate-signal-row(int);
     callback unread-hover-started();
     callback unread-hover-ended();
 
@@ -922,6 +923,15 @@ export component MainWindow inherits Window {
                                     font-size: 10px;
                                     font-weight: 600;
                                     horizontal-alignment: center;
+                                }
+
+                                TouchArea {
+                                    mouse-cursor: signal-row.pending ? default : pointer;
+                                    clicked => {
+                                        if !signal-row.pending {
+                                            root.activate-signal-row(index);
+                                        }
+                                    }
                                 }
                             }
 
