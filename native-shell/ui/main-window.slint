@@ -629,7 +629,8 @@ export component MainWindow inherits Window {
                     }
 
                     ListView {
-                        height: 610px;
+                        min-height: 610px;
+                        vertical-stretch: 1;
 
                         for signal-row[index] in root.signal-rows : Rectangle {
                             height: signal-row.is_header ? 40px : 22px;
