@@ -9,7 +9,7 @@ use crate::app_state::{AppState, UiSnapshot};
 use crate::main_window_state::{
     load_main_window_state, main_window_state_path, save_main_window_state, MainWindowState,
 };
-use crate::runtime::RuntimeHandles;
+use crate::runtime::{parse_timeline_bars_input, RuntimeHandles};
 use crate::tray::{TrayCommand, TrayHandles};
 use crate::widget_state::{
     build_widget_placement, hide_widget_placement, load_widget_placement, restore_widget_placement,
@@ -452,6 +452,28 @@ fn wire_main_window(
                 .request_set_group_timeline_bars(group_id, timeline_bars);
         }
         timeline_preset_bridge.refresh_ui();
+    });
+
+    let timeline_input_bridge = bridge.clone();
+    main_window.on_apply_signal_timeline_bars_input(move |index, timeline_bars| {
+        let Some(timeline_bars) = parse_timeline_bars_input(timeline_bars.as_str()) else {
+            return;
+        };
+        {
+            let mut state = timeline_input_bridge.state.lock().expect("state poisoned");
+            state.set_signal_timeline_bars_at(index as usize, timeline_bars);
+        }
+        if let Some((group_id, _, timeline_bars, _)) = timeline_input_bridge
+            .state
+            .lock()
+            .expect("state poisoned")
+            .group_display_settings_at(index as usize)
+        {
+            timeline_input_bridge
+                .runtime
+                .request_set_group_timeline_bars(group_id, timeline_bars);
+        }
+        timeline_input_bridge.refresh_ui();
     });
 
     let active_filter_bridge = bridge.clone();

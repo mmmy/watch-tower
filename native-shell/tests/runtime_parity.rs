@@ -2,7 +2,7 @@ use std::fs;
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use signal_desk_native::runtime::{AppConfig, RuntimeModel, WatchGroup};
+use signal_desk_native::runtime::{parse_timeline_bars_input, AppConfig, RuntimeModel, WatchGroup};
 
 fn unique_temp_dir(name: &str) -> PathBuf {
     let nonce = SystemTime::now()
@@ -38,6 +38,30 @@ fn runtime_model_updates_snapshot_for_shell_and_ui_flags() {
     let snapshot = runtime.set_sound(false);
     assert!(!snapshot.config.ui.sound);
     assert_eq!(snapshot.last_connection_ok, None);
+}
+
+#[test]
+fn group_timeline_bars_accepts_values_up_to_500() {
+    let config = AppConfig {
+        groups: vec![WatchGroup::default()],
+        ..Default::default()
+    };
+    let mut runtime = RuntimeModel::new(config);
+
+    let snapshot = runtime.set_group_timeline_bars("group-1", 500);
+    assert_eq!(snapshot.config.groups[0].timeline_bars, 500);
+
+    let snapshot = runtime.set_group_timeline_bars("group-1", 501);
+    assert_eq!(snapshot.config.groups[0].timeline_bars, 500);
+}
+
+#[test]
+fn timeline_bars_input_is_trimmed_clamped_and_ignores_invalid_text() {
+    assert_eq!(parse_timeline_bars_input(" 375 "), Some(375));
+    assert_eq!(parse_timeline_bars_input("7"), Some(10));
+    assert_eq!(parse_timeline_bars_input("999"), Some(500));
+    assert_eq!(parse_timeline_bars_input("abc"), None);
+    assert_eq!(parse_timeline_bars_input(""), None);
 }
 
 #[test]

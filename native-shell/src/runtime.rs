@@ -826,7 +826,16 @@ pub fn config_location_hint() -> String {
 }
 
 pub fn clamp_timeline_bars(value: i64) -> i64 {
-    value.clamp(10, 240)
+    value.clamp(10, 500)
+}
+
+pub fn parse_timeline_bars_input(value: &str) -> Option<i64> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    trimmed.parse::<i64>().ok().map(clamp_timeline_bars)
 }
 
 fn sanitize_watch_groups(groups: &mut [WatchGroup]) {

@@ -1,4 +1,4 @@
-import { HorizontalBox, ListView, VerticalBox } from "std-widgets.slint";
+import { HorizontalBox, LineEdit, ListView, VerticalBox } from "std-widgets.slint";
 
 export struct SignalRowData {
     title: string,
@@ -263,6 +263,7 @@ export component MainWindow inherits Window {
     callback toggle-signal-sort-mode(int);
     callback adjust-signal-timeline-bars(int, int);
     callback set-signal-timeline-bars(int, int);
+    callback apply-signal-timeline-bars-input(int, string);
     callback toggle-signal-active-levels-only(int);
     callback toggle-signal-read(int);
     callback unread-hover-started();
@@ -696,7 +697,7 @@ export component MainWindow inherits Window {
                                 x: parent.width - self.width - 6px;
                                 y: 22px;
                                 width: 144px;
-                                height: 154px;
+                                height: 184px;
                                 close-policy: close-on-click-outside;
 
                                 Rectangle {
@@ -749,15 +750,43 @@ export component MainWindow inherits Window {
                                         x: 8px;
                                         y: 52px;
                                         width: parent.width - 16px;
-                                        text: "窗口: " + signal-row.timeline_bars + " 根";
+                                        text: "窗口: " + signal-row.timeline_bars + " 根 (10-500)";
                                         color: #404040;
                                         font-size: 10px;
                                         overflow: elide;
                                     }
 
-                                    PlainButton {
+                                    timeline-input := LineEdit {
                                         x: 8px;
                                         y: 70px;
+                                        width: 74px;
+                                        height: 20px;
+                                        text: "" + signal-row.timeline_bars;
+                                        input-type: number;
+                                        font-size: 10px;
+                                        horizontal-alignment: right;
+                                        accepted(value) => {
+                                            root.apply-signal-timeline-bars-input(index, value);
+                                            settings-popup.close();
+                                        }
+                                    }
+
+                                    PlainButton {
+                                        x: 88px;
+                                        y: 70px;
+                                        width: 50px;
+                                        height: 20px;
+                                        text: "应用";
+                                        text-size: 10px;
+                                        clicked => {
+                                            root.apply-signal-timeline-bars-input(index, timeline-input.text);
+                                            settings-popup.close();
+                                        }
+                                    }
+
+                                    PlainButton {
+                                        x: 8px;
+                                        y: 98px;
                                         width: 20px;
                                         height: 18px;
                                         text: "-";
@@ -769,7 +798,7 @@ export component MainWindow inherits Window {
 
                                     PlainButton {
                                         x: 34px;
-                                        y: 70px;
+                                        y: 98px;
                                         width: 20px;
                                         height: 18px;
                                         text: "+";
@@ -781,7 +810,7 @@ export component MainWindow inherits Window {
 
                                     MiniValueChip {
                                         x: 60px;
-                                        y: 70px;
+                                        y: 98px;
                                         width: 22px;
                                         height: 18px;
                                         text: "20";
@@ -793,7 +822,7 @@ export component MainWindow inherits Window {
 
                                     MiniValueChip {
                                         x: 88px;
-                                        y: 70px;
+                                        y: 98px;
                                         width: 22px;
                                         height: 18px;
                                         text: "30";
@@ -805,7 +834,7 @@ export component MainWindow inherits Window {
 
                                     MiniValueChip {
                                         x: 116px;
-                                        y: 70px;
+                                        y: 98px;
                                         width: 22px;
                                         height: 18px;
                                         text: "60";
@@ -817,7 +846,7 @@ export component MainWindow inherits Window {
 
                                     MiniValueChip {
                                         x: 8px;
-                                        y: 94px;
+                                        y: 122px;
                                         width: 30px;
                                         height: 18px;
                                         text: "40";
@@ -829,7 +858,7 @@ export component MainWindow inherits Window {
 
                                     MiniValueChip {
                                         x: 44px;
-                                        y: 94px;
+                                        y: 122px;
                                         width: 30px;
                                         height: 18px;
                                         text: "120";
@@ -839,9 +868,21 @@ export component MainWindow inherits Window {
                                         }
                                     }
 
+                                    MiniValueChip {
+                                        x: 80px;
+                                        y: 122px;
+                                        width: 30px;
+                                        height: 18px;
+                                        text: "500";
+                                        clicked => {
+                                            root.set-signal-timeline-bars(index, 500);
+                                            settings-popup.close();
+                                        }
+                                    }
+
                                     PlainCheckBox {
                                         x: 8px;
-                                        y: 118px;
+                                        y: 148px;
                                         width: parent.width - 16px;
                                         text: "仅显示活跃级别";
                                         checked: signal-row.active_levels_only;
@@ -852,7 +893,7 @@ export component MainWindow inherits Window {
 
                                     Text {
                                         x: 23px;
-                                        y: 137px;
+                                        y: 167px;
                                         width: parent.width - 31px;
                                         text: "显示 " + signal-row.visible_level_count
                                             + " / " + signal-row.total_level_count;
