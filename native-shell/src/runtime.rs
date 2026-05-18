@@ -5,9 +5,9 @@ use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+use crate::api_client::{ApiClient, SignalListQuery};
 use crate::config;
 use crate::notifications;
-use reqwest::blocking::Client;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -150,17 +150,6 @@ pub struct SignalMutationInput {
 }
 
 #[derive(Debug, Serialize)]
-struct SignalListRequest {
-    symbols: String,
-    periods: String,
-    #[serde(rename = "signalTypes")]
-    signal_types: String,
-    page: u32,
-    #[serde(rename = "pageSize")]
-    page_size: u32,
-}
-
-#[derive(Debug, Serialize)]
 struct ReadStatusRequest {
     symbol: String,
     period: String,
@@ -183,38 +172,13 @@ struct ReadStatusBatchResponse {
 #[derive(Debug, Deserialize)]
 struct ReadStatusBatchResult {
     symbol: String,
-    #[serde(deserialize_with = "deserialize_stringish")]
+    #[serde(deserialize_with = "crate::api_client::deserialize_stringish")]
     period: String,
     #[serde(rename = "signalType")]
     signal_type: String,
     read: bool,
     #[serde(default)]
     success: bool,
-}
-
-#[derive(Debug, Deserialize)]
-struct SignalListResponse {
-    #[serde(default)]
-    data: Vec<SignalListItem>,
-}
-
-#[derive(Debug, Deserialize)]
-struct SignalListItem {
-    symbol: String,
-    #[serde(deserialize_with = "deserialize_stringish")]
-    period: String,
-    #[serde(default)]
-    signals: HashMap<String, RemoteSignalDetail>,
-}
-
-#[derive(Debug, Deserialize)]
-struct RemoteSignalDetail {
-    #[serde(default)]
-    sd: i8,
-    #[serde(default)]
-    t: i64,
-    #[serde(default)]
-    read: bool,
 }
 
 #[derive(Debug)]
@@ -443,7 +407,10 @@ impl RuntimeModel {
         self.refresh_from_api_with_tick(true)
     }
 
-    fn refresh_from_api_with_tick(&mut self, advance_tick: bool) -> Result<RuntimeSnapshot, String> {
+    fn refresh_from_api_with_tick(
+        &mut self,
+        advance_tick: bool,
+    ) -> Result<RuntimeSnapshot, String> {
         refresh_runtime_from_api(&mut self.store, advance_tick)
     }
 
@@ -662,19 +629,6 @@ fn now_ms() -> i64 {
         .as_millis() as i64
 }
 
-fn deserialize_stringish<'de, D>(deserializer: D) -> Result<String, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    let value = serde_json::Value::deserialize(deserializer)?;
-    match value {
-        serde_json::Value::String(text) => Ok(text),
-        serde_json::Value::Number(number) => Ok(number.to_string()),
-        serde_json::Value::Null => Ok(String::new()),
-        other => Ok(other.to_string().trim_matches('"').to_string()),
-    }
-}
-
 fn seed_signals(config: &AppConfig) -> Vec<RuntimeSignal> {
     let mut signals = Vec::new();
 
@@ -699,39 +653,8 @@ fn seed_signals(config: &AppConfig) -> Vec<RuntimeSignal> {
     signals
 }
 
-fn post_json<TReq: Serialize, TRes: for<'de> Deserialize<'de>>(
-    client: &Client,
-    config: &AppConfig,
-    path: &str,
-    body: &TReq,
-) -> Result<TRes, String> {
-    let url = format!(
-        "{}/{}",
-        config.api.base_url.trim_end_matches('/'),
-        path.trim_start_matches('/')
-    );
-
-    let response = client
-        .post(url)
-        .header("x-api-key", &config.api.api_key)
-        .json(body)
-        .send()
-        .map_err(|err| err.to_string())?;
-
-    let status = response.status();
-    if !status.is_success() {
-        let body = response.text().unwrap_or_default();
-        return Err(format!("request failed: {} {}", status, body));
-    }
-
-    response.json::<TRes>().map_err(|err| err.to_string())
-}
-
 fn fetch_runtime_signals(config: &AppConfig) -> Result<Vec<RuntimeSignal>, String> {
-    let client = Client::builder()
-        .use_rustls_tls()
-        .build()
-        .map_err(|err| err.to_string())?;
+    let client = ApiClient::new(&config.api.base_url, &config.api.api_key)?;
 
     let mut signals = seed_signals(config);
     let mut index_by_key = HashMap::new();
@@ -748,7 +671,7 @@ fn fetch_runtime_signals(config: &AppConfig) -> Result<Vec<RuntimeSignal>, Strin
     }
 
     for group in config.groups.iter().filter(|group| group.enabled) {
-        let request = SignalListRequest {
+        let request = SignalListQuery {
             symbols: group.symbol.clone(),
             periods: group.periods.join(","),
             signal_types: group.signal_types.join(","),
@@ -756,12 +679,7 @@ fn fetch_runtime_signals(config: &AppConfig) -> Result<Vec<RuntimeSignal>, Strin
             page_size: config.poll.page_size,
         };
 
-        let response: SignalListResponse = post_json(
-            &client,
-            config,
-            "/api/open/watch-list/symbol-signals",
-            &request,
-        )?;
+        let response = client.fetch_signal_list(&request)?;
 
         for item in response.data {
             for (signal_type, detail) in item.signals {
@@ -839,14 +757,9 @@ fn mark_signals_read_batch_remote(
         return Ok(store.snapshot());
     }
 
-    let client = Client::builder()
-        .use_rustls_tls()
-        .build()
-        .map_err(|err| err.to_string())?;
+    let client = ApiClient::new(&store.config.api.base_url, &store.config.api.api_key)?;
 
-    let response: ReadStatusBatchResponse = post_json(
-        &client,
-        &store.config,
+    let response: ReadStatusBatchResponse = client.post_json(
         "/api/open/watch-list/symbol-alert/read-status/batch",
         &ReadStatusBatchRequest { items },
     )?;
@@ -952,9 +865,8 @@ mod tests {
             let bytes_read = stream.read(&mut buffer).expect("read request");
             let request = String::from_utf8_lossy(&buffer[..bytes_read]);
 
-            assert!(request.starts_with(
-                "POST /api/open/watch-list/symbol-alert/read-status/batch HTTP/1.1"
-            ));
+            assert!(request
+                .starts_with("POST /api/open/watch-list/symbol-alert/read-status/batch HTTP/1.1"));
             assert!(request.contains("x-api-key: test-key"));
             assert!(request.contains("\"items\":["));
             assert!(request.contains(
@@ -1027,9 +939,8 @@ mod tests {
             let bytes_read = stream.read(&mut buffer).expect("read request");
             let request = String::from_utf8_lossy(&buffer[..bytes_read]);
 
-            assert!(request.starts_with(
-                "POST /api/open/watch-list/symbol-alert/read-status/batch HTTP/1.1"
-            ));
+            assert!(request
+                .starts_with("POST /api/open/watch-list/symbol-alert/read-status/batch HTTP/1.1"));
             assert!(request.contains(
                 "{\"symbol\":\"BTCUSDT\",\"period\":\"60\",\"signalType\":\"divMacd\",\"read\":false}"
             ));

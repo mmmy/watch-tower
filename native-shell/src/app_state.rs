@@ -1,7 +1,7 @@
 use crate::runtime::{
-    clamp_timeline_bars, RuntimeSignal, RuntimeSnapshot, SignalMutationInput,
-    WatchGroupRowSortMode,
+    clamp_timeline_bars, RuntimeSignal, RuntimeSnapshot, SignalMutationInput, WatchGroupRowSortMode,
 };
+use crate::signal_time::period_to_ms;
 use chrono::{Local, TimeZone};
 
 #[derive(Clone, Debug)]
@@ -140,7 +140,10 @@ impl AppState {
 
         let config_location = crate::runtime::config_location_hint();
         let row_views = self.build_signal_row_views();
-        let signal_rows = row_views.iter().map(|entry| entry.row.clone()).collect::<Vec<_>>();
+        let signal_rows = row_views
+            .iter()
+            .map(|entry| entry.row.clone())
+            .collect::<Vec<_>>();
         let mut unread_items = row_views
             .iter()
             .filter_map(|entry| entry.unread_item.clone())
@@ -624,28 +627,6 @@ fn timeline_marker_ratio(signal: &RuntimeSignal, now_ms: i64, cell_count: i64) -
     Some(active_index as f32 / (cell_count - 1) as f32)
 }
 
-fn period_to_ms(period: &str) -> Option<i64> {
-    let normalized = period.trim().to_ascii_uppercase();
-    match normalized.as_str() {
-        "W" => Some(7 * 24 * 60 * 60 * 1000),
-        "D" => Some(24 * 60 * 60 * 1000),
-        _ if normalized.ends_with('D') => normalized
-            .trim_end_matches('D')
-            .parse::<i64>()
-            .ok()
-            .map(|days| days * 24 * 60 * 60 * 1000),
-        _ if normalized.ends_with('S') => normalized
-            .trim_end_matches('S')
-            .parse::<i64>()
-            .ok()
-            .map(|seconds| seconds * 1000),
-        _ => normalized
-            .parse::<i64>()
-            .ok()
-            .map(|minutes| minutes * 60 * 1000),
-    }
-}
-
 fn format_timestamp(timestamp_ms: i64) -> String {
     if timestamp_ms <= 0 {
         return "n/a".to_string();
@@ -726,7 +707,8 @@ fn compare_signal_recency(
 
 #[cfg(test)]
 mod tests {
-    use super::{format_timestamp, period_to_ms};
+    use super::format_timestamp;
+    use crate::signal_time::period_to_ms;
     use chrono::{Local, TimeZone};
 
     #[test]
