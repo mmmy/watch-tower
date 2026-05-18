@@ -699,7 +699,7 @@ export component MainWindow inherits Window {
                                 x: parent.width - self.width - 6px;
                                 y: 22px;
                                 width: 144px;
-                                height: 184px;
+                                height: 208px;
                                 close-policy: close-on-click-outside;
 
                                 Rectangle {
@@ -875,6 +875,42 @@ export component MainWindow inherits Window {
                                         y: 122px;
                                         width: 30px;
                                         height: 18px;
+                                        text: "200";
+                                        clicked => {
+                                            root.set-signal-timeline-bars(index, 200);
+                                            settings-popup.close();
+                                        }
+                                    }
+
+                                    MiniValueChip {
+                                        x: 8px;
+                                        y: 146px;
+                                        width: 30px;
+                                        height: 18px;
+                                        text: "300";
+                                        clicked => {
+                                            root.set-signal-timeline-bars(index, 300);
+                                            settings-popup.close();
+                                        }
+                                    }
+
+                                    MiniValueChip {
+                                        x: 44px;
+                                        y: 146px;
+                                        width: 30px;
+                                        height: 18px;
+                                        text: "400";
+                                        clicked => {
+                                            root.set-signal-timeline-bars(index, 400);
+                                            settings-popup.close();
+                                        }
+                                    }
+
+                                    MiniValueChip {
+                                        x: 80px;
+                                        y: 146px;
+                                        width: 30px;
+                                        height: 18px;
                                         text: "500";
                                         clicked => {
                                             root.set-signal-timeline-bars(index, 500);
@@ -884,7 +920,7 @@ export component MainWindow inherits Window {
 
                                     PlainCheckBox {
                                         x: 8px;
-                                        y: 148px;
+                                        y: 172px;
                                         width: parent.width - 16px;
                                         text: "仅显示活跃级别";
                                         checked: signal-row.active_levels_only;
@@ -895,7 +931,7 @@ export component MainWindow inherits Window {
 
                                     Text {
                                         x: 23px;
-                                        y: 167px;
+                                        y: 191px;
                                         width: parent.width - 31px;
                                         text: "显示 " + signal-row.visible_level_count
                                             + " / " + signal-row.total_level_count;
