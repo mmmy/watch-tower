@@ -75,6 +75,14 @@ class CodexWecomSignalTests(unittest.TestCase):
 
         self.assertTrue(module.should_handle_alert({"signalType": "tdMd"}, {}))
 
+    def test_min_signal_period_filter_skips_smaller_periods(self):
+        module = load_module()
+        env = {"MIN_SIGNAL_PERIOD": "15"}
+
+        self.assertTrue(module.should_handle_alert({"period": "15"}, env))
+        self.assertTrue(module.should_handle_alert({"period": "D"}, env))
+        self.assertFalse(module.should_handle_alert({"period": "5"}, env))
+
     def test_build_codex_args_adds_cd_before_prompt(self):
         module = load_module()
 

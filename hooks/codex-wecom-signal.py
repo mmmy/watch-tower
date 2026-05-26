@@ -37,6 +37,7 @@ def main() -> int:
             "hook started "
             f"cwd={Path.cwd()} "
             f"signal_types={env.get('SIGNAL_TYPES', '') or '<all>'} "
+            f"min_signal_period={env.get('MIN_SIGNAL_PERIOD', '') or '<none>'} "
             f"codex_cd={env.get('CODEX_CD', '') or DEFAULT_CODEX_CD}"
         )
         bot_key = env.get("WECOM_BOT_KEY") or os.environ.get("WECOM_BOT_KEY", "")
@@ -55,7 +56,7 @@ def main() -> int:
                 log("skipped non-object alert")
                 continue
             if not should_handle_alert(alert, env):
-                log(f"skipped by SIGNAL_TYPES: {format_alert_label(alert)}")
+                log(f"skipped by filters: {format_alert_label(alert)}")
                 continue
             prompt = build_codex_prompt(alert)
             result = run_codex(prompt, env, format_alert_label(alert))
@@ -89,15 +90,50 @@ def build_codex_prompt(alert: dict[str, Any]) -> str:
 
 def should_handle_alert(alert: dict[str, Any], env: dict[str, str]) -> bool:
     allowed = parse_csv(env.get("SIGNAL_TYPES", ""))
-    if not allowed:
+    if allowed:
+        signal_type = str(alert.get("signalType", "")).strip().lower()
+        if signal_type not in {value.lower() for value in allowed}:
+            return False
+
+    min_period = period_to_ms(env.get("MIN_SIGNAL_PERIOD", ""))
+    if min_period is None:
         return True
 
-    signal_type = str(alert.get("signalType", "")).strip().lower()
-    return signal_type in {value.lower() for value in allowed}
+    period = period_to_ms(str(alert.get("period", "")))
+    return period is not None and period >= min_period
 
 
 def parse_csv(value: str) -> list[str]:
     return [item.strip() for item in value.split(",") if item.strip()]
+
+
+def period_to_ms(period: str) -> int | None:
+    normalized = period.strip().upper()
+    if not normalized:
+        return None
+
+    if normalized == "W":
+        return 7 * 24 * 60 * 60 * 1000
+
+    if normalized.endswith("D"):
+        amount = normalized[:-1] or "1"
+        return parse_positive_int(amount, 24 * 60 * 60 * 1000)
+
+    if normalized.endswith("S"):
+        return parse_positive_int(normalized[:-1], 1000)
+
+    return parse_positive_int(normalized, 60 * 1000)
+
+
+def parse_positive_int(value: str, multiplier: int) -> int | None:
+    try:
+        amount = int(value)
+    except ValueError:
+        return None
+
+    if amount <= 0:
+        return None
+    return amount * multiplier
 
 
 def run_codex(prompt: str, env: dict[str, str], alert_label: str = "") -> str:
@@ -153,7 +189,7 @@ def resolve_codex_command() -> str:
 
 
 def build_wecom_markdown(alert: dict[str, Any], analysis: str) -> str:
-    side = "看多" if alert.get("side", 1) >= 0 else "看空"
+    side = "超买" if alert.get("side", 1) >= 0 else "超卖"
     title = (
         f"**Watch Tower 新信号分析**\n"
         f"> 标的: {alert.get('symbol', '')}\n"
