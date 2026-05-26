@@ -17,7 +17,7 @@ hooks:
   enabled: false
   command: "python"
   args:
-    - "F:\\test\\watch-tower\\hooks\\new-signal.py"
+    - "F:\\test\\watch-tower\\hooks\\codex-wecom-signal.py"
 
 groups:
   - id: "group-1"
