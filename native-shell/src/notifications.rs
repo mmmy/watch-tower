@@ -1,22 +1,26 @@
 use crate::runtime::{RuntimeSignal, UiConfig};
 use std::collections::HashMap;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-enum AlertLevel {
+use serde::Serialize;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AlertLevel {
     Normal,
     High,
     Critical,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SignalAlert {
-    symbol: String,
-    group_name: String,
-    period: String,
-    signal_type: String,
-    side: i8,
-    trigger_time: i64,
-    level: AlertLevel,
+    pub symbol: String,
+    pub group_name: String,
+    pub period: String,
+    pub signal_type: String,
+    pub side: i8,
+    pub trigger_time: i64,
+    pub level: AlertLevel,
 }
 
 pub fn collect_new_alerts(previous: &[RuntimeSignal], next: &[RuntimeSignal]) -> Vec<SignalAlert> {

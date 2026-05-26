@@ -13,6 +13,12 @@ ui:
   notifications: true
   sound: false
 
+hooks:
+  enabled: false
+  command: "python"
+  args:
+    - "F:\\test\\watch-tower\\hooks\\new-signal.py"
+
 groups:
   - id: "group-1"
     name: "BTC Main"

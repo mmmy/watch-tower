@@ -1,6 +1,7 @@
 pub mod api_client;
 pub mod app_state;
 pub mod config;
+pub mod hooks;
 pub mod main_window_state;
 pub mod notifications;
 pub mod runtime;

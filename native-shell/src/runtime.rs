@@ -64,6 +64,24 @@ impl Default for UiConfig {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct HookConfig {
+    pub enabled: bool,
+    pub command: String,
+    pub args: Vec<String>,
+}
+
+impl Default for HookConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            command: String::new(),
+            args: Vec::new(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum WatchGroupRowSortMode {
@@ -113,6 +131,7 @@ pub struct AppConfig {
     pub api: ApiConfig,
     pub poll: PollConfig,
     pub ui: UiConfig,
+    pub hooks: HookConfig,
     pub groups: Vec<WatchGroup>,
 }
 
@@ -712,6 +731,7 @@ fn refresh_runtime_from_api(
     };
     store.apply_remote_signals(signals, advance_tick);
     notifications::emit_alerts(&alerts, &store.config.ui);
+    crate::hooks::emit_new_signal_hook(&alerts, &store.config.hooks);
     Ok(store.snapshot())
 }
 
