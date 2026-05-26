@@ -85,7 +85,9 @@ def load_env(runtime_dir: Path) -> dict[str, str]:
 
 def build_codex_prompt(alert: dict[str, Any]) -> str:
     signal_json = json.dumps(alert, ensure_ascii=False, separators=(",", ":"))
-    return f"/sma-trend 新信号触发:{signal_json}, 请分析是否可以在本级别(作为小级别超买超卖)等待附近机会入场, 需要大级别布林带趋势支持, 如果分析不适合入场, 那么给出做多做空级别推荐, 并给出预计等待时间"
+    # return f"/sma-trend 新信号触发:{signal_json}, 请分析是否可以在本级别(作为小级别超买超卖)等待附近机会入场, 需要大级别布林带趋势支持, 如果分析不适合入场, 那么给出做多做空级别推荐, 并给出预计等待时间"
+    # return f"/sma-trend 做多做空级别推荐, 并给出预计等待时间,新信号触发:{signal_json}, 本级别适合附近等待入场吗"
+    return "/sma-trend btcusdt做多做空级别推荐, 并给出预计等待时间"
 
 
 def should_handle_alert(alert: dict[str, Any], env: dict[str, str]) -> bool:
