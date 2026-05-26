@@ -12,6 +12,7 @@ export struct SignalRowData {
     sort_recent: bool,
     timeline_visible: bool,
     timeline_ratio: float,
+    timeline_tooltip: string,
     timeline_positive: bool,
     active_levels_only: bool,
     visible_level_count: int,
@@ -991,12 +992,47 @@ export component MainWindow inherits Window {
                                 background: signal-row.is_header ? transparent : #edf0f4;
                                 visible: !signal-row.is_header && signal-row.timeline_visible;
 
+                                timeline-touch := TouchArea {
+                                    changed has-hover => {
+                                        if self.has-hover && signal-row.timeline_tooltip != "" {
+                                            timeline-tooltip.show();
+                                        } else {
+                                            timeline-tooltip.close();
+                                        }
+                                    }
+                                }
+
                                 Rectangle {
                                     x: signal-row.timeline_ratio * (parent.width - self.width);
                                     y: 0px;
                                     width: 4px;
                                     height: parent.height;
                                     background: signal-row.timeline_positive ? #34d399 : #ef4444;
+                                }
+
+                                timeline-tooltip := PopupWindow {
+                                    x: parent.width - self.width;
+                                    y: -24px;
+                                    width: 96px;
+                                    height: 22px;
+                                    close-policy: close-on-click-outside;
+
+                                    Rectangle {
+                                        border-width: 1px;
+                                        border-color: #8f8f8f;
+                                        background: #fffdf7;
+
+                                        Text {
+                                            x: 6px;
+                                            y: 4px;
+                                            width: parent.width - 12px;
+                                            text: signal-row.timeline_tooltip;
+                                            color: #202020;
+                                            font-size: 10px;
+                                            horizontal-alignment: center;
+                                            overflow: elide;
+                                        }
+                                    }
                                 }
                             }
                         }

@@ -193,6 +193,29 @@ fn signal_rows_expose_timeline_marker_ratio_for_recent_events() {
 }
 
 #[test]
+fn signal_rows_expose_elapsed_kline_tooltip_for_recent_events() {
+    let mut runtime_snapshot = runtime_snapshot_from_config(AppConfig {
+        groups: vec![WatchGroup::default()],
+        ..Default::default()
+    });
+
+    let now_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as i64;
+
+    runtime_snapshot.signals[0].group_name = "BTC Main".into();
+    runtime_snapshot.signals[0].signal_type = "divMacd".into();
+    runtime_snapshot.signals[0].period = "60".into();
+    runtime_snapshot.signals[0].trigger_time = now_ms - 8 * 60 * 60 * 1000;
+
+    let snapshot = AppState::new(runtime_snapshot).snapshot();
+    let signal_row = &snapshot.signal_rows[1];
+
+    assert_eq!(signal_row.timeline_tooltip, "已过 8 根K线");
+}
+
+#[test]
 fn signal_rows_expose_timeline_direction_for_short_signals() {
     let mut runtime_snapshot = runtime_snapshot_from_config(AppConfig {
         groups: vec![WatchGroup::default()],

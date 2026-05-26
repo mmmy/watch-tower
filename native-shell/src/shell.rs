@@ -845,6 +845,7 @@ fn apply_snapshot_to_main(main_window: &MainWindow, snapshot: &UiSnapshot) {
             sort_recent: row.sort_recent,
             timeline_visible: row.timeline_visible,
             timeline_ratio: row.timeline_ratio,
+            timeline_tooltip: SharedString::from(row.timeline_tooltip.as_str()),
             timeline_positive: row.timeline_positive,
             active_levels_only: row.active_levels_only,
             visible_level_count: row.visible_level_count,

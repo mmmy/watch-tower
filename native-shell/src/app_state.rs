@@ -1,7 +1,7 @@
 use crate::runtime::{
     clamp_timeline_bars, RuntimeSignal, RuntimeSnapshot, SignalMutationInput, WatchGroupRowSortMode,
 };
-use crate::signal_time::period_to_ms;
+use crate::signal_time::{elapsed_candles, period_to_ms};
 use chrono::{Local, TimeZone};
 
 #[derive(Clone, Debug)]
@@ -42,6 +42,7 @@ pub struct UiSignalRow {
     pub sort_recent: bool,
     pub timeline_visible: bool,
     pub timeline_ratio: f32,
+    pub timeline_tooltip: String,
     pub timeline_positive: bool,
     pub active_levels_only: bool,
     pub visible_level_count: i32,
@@ -478,6 +479,7 @@ impl AppState {
                         sort_recent: matches!(sort_mode, WatchGroupRowSortMode::RecentFirst),
                         timeline_visible: false,
                         timeline_ratio: 0.0,
+                        timeline_tooltip: String::new(),
                         timeline_positive: true,
                         active_levels_only,
                         visible_level_count,
@@ -516,6 +518,7 @@ impl AppState {
                             sort_recent: false,
                             timeline_visible: timeline_ratio.is_some(),
                             timeline_ratio: timeline_ratio.unwrap_or(0.0),
+                            timeline_tooltip: timeline_tooltip(&signal, now_ms),
                             timeline_positive: signal.side >= 0,
                             active_levels_only: false,
                             visible_level_count: 0,
@@ -625,6 +628,13 @@ fn timeline_marker_ratio(signal: &RuntimeSignal, now_ms: i64, cell_count: i64) -
     }
 
     Some(active_index as f32 / (cell_count - 1) as f32)
+}
+
+fn timeline_tooltip(signal: &RuntimeSignal, now_ms: i64) -> String {
+    elapsed_candles(&signal.period, signal.trigger_time, now_ms)
+        .elapsed_candles
+        .map(|candles| format!("已过 {candles} 根K线"))
+        .unwrap_or_default()
 }
 
 fn format_timestamp(timestamp_ms: i64) -> String {
