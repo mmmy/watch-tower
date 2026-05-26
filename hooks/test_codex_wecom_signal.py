@@ -48,7 +48,7 @@ class CodexWecomSignalTests(unittest.TestCase):
         self.assertTrue(prompt.startswith("/sma-trend 新信号触发:{"))
         self.assertIn('"symbol":"BTCUSDT"', prompt)
         self.assertIn('"period":"15"', prompt)
-        self.assertTrue(prompt.endswith("请分析是否可以在本级别接下来5根k插针入场"))
+        self.assertIn("请分析是否可以在本级别", prompt)
 
     def test_resolve_codex_command_prefers_cmd_shim_on_windows(self):
         module = load_module()

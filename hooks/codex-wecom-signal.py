@@ -33,6 +33,12 @@ def main() -> int:
     try:
         payload = json.loads(sys.stdin.read() or "{}")
         env = load_env(Path.cwd())
+        log(
+            "hook started "
+            f"cwd={Path.cwd()} "
+            f"signal_types={env.get('SIGNAL_TYPES', '') or '<all>'} "
+            f"codex_cd={env.get('CODEX_CD', '') or DEFAULT_CODEX_CD}"
+        )
         bot_key = env.get("WECOM_BOT_KEY") or os.environ.get("WECOM_BOT_KEY", "")
         if not bot_key:
             log("missing WECOM_BOT_KEY")
@@ -40,15 +46,19 @@ def main() -> int:
 
         alerts = payload.get("alerts", [])
         if not isinstance(alerts, list):
+            log("payload alerts is not a list")
             return 0
 
+        log(f"received alerts count={len(alerts)}")
         for alert in alerts:
             if not isinstance(alert, dict):
+                log("skipped non-object alert")
                 continue
             if not should_handle_alert(alert, env):
+                log(f"skipped by SIGNAL_TYPES: {format_alert_label(alert)}")
                 continue
             prompt = build_codex_prompt(alert)
-            result = run_codex(prompt, env)
+            result = run_codex(prompt, env, format_alert_label(alert))
             send_wecom_markdown(bot_key, build_wecom_markdown(alert, result))
     except Exception as error:  # noqa: BLE001 - hook failures must not affect Watch Tower.
         log(f"hook failed: {error}")
@@ -90,18 +100,31 @@ def parse_csv(value: str) -> list[str]:
     return [item.strip() for item in value.split(",") if item.strip()]
 
 
-def run_codex(prompt: str, env: dict[str, str]) -> str:
+def run_codex(prompt: str, env: dict[str, str], alert_label: str = "") -> str:
     command = resolve_codex_command()
-    completed = subprocess.run(
-        [command, *build_codex_args(prompt, env)],
-        capture_output=True,
-        encoding="utf-8",
-        errors="replace",
-        timeout=CODEX_TIMEOUT_SECS,
-        check=False,
-    )
+    log(f"codex start: command={command} alert={alert_label}")
+    try:
+        completed = subprocess.run(
+            [command, *build_codex_args(prompt, env)],
+            capture_output=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=CODEX_TIMEOUT_SECS,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        log(f"codex timeout after {CODEX_TIMEOUT_SECS}s: alert={alert_label}")
+        return f"codex exec timeout after {CODEX_TIMEOUT_SECS}s"
+
     output = completed.stdout.strip()
     error = completed.stderr.strip()
+    log(
+        "codex done: "
+        f"alert={alert_label} "
+        f"exit={completed.returncode} "
+        f"stdout_chars={len(output)} "
+        f"stderr_chars={len(error)}"
+    )
     if completed.returncode == 0:
         return output or "(codex returned no output)"
 
@@ -164,9 +187,30 @@ def send_wecom_markdown(bot_key: str, markdown: str) -> None:
 
     try:
         with urllib.request.urlopen(request, timeout=WECOM_TIMEOUT_SECS) as response:
-            response.read()
+            response_body = response.read().decode("utf-8", errors="replace")
+            try:
+                result = json.loads(response_body)
+            except json.JSONDecodeError:
+                log(f"wecom returned non-json response: {response_body}")
+                return
+
+            errcode = result.get("errcode")
+            if errcode == 0:
+                log("wecom send ok")
+            else:
+                log(f"wecom send failed: {response_body}")
     except urllib.error.URLError as error:
         log(f"wecom send failed: {error}")
+
+
+def format_alert_label(alert: dict[str, Any]) -> str:
+    return (
+        f"symbol={alert.get('symbol', '')} "
+        f"period={alert.get('period', '')} "
+        f"signalType={alert.get('signalType', '')} "
+        f"side={alert.get('side', '')} "
+        f"triggerTime={alert.get('triggerTime', '')}"
+    )
 
 
 def log(message: str) -> None:
